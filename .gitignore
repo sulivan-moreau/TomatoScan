@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+dist/
+*.egg-info/
+
+# Environnement
+.env
+
+# Données et modèles
+data/
+*.h5
+*.keras
+*.pkl
+mlruns/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# uv
+.uv/
+
+# OS
+.DS_Store
+Thumbs.db
+EOF
