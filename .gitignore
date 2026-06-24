@@ -12,10 +12,14 @@ dist/
 
 # Données et modèles
 data/
+PlantVillage/
+models/
 *.h5
 *.keras
 *.pkl
+*.pt
 mlruns/
+mlflow.db
 
 # Jupyter
 .ipynb_checkpoints/
