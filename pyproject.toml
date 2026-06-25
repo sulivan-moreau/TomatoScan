@@ -25,6 +25,8 @@ dependencies = [
     "alembic>=1.13.0",
     # Logs
     "loguru>=0.7.2",
+    # Monitoring
+    "prometheus-client>=0.20.0",
     # Dataset
     "kaggle>=1.6.0",
     "torch>=2.12.1",
