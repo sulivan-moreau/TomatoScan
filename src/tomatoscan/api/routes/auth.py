@@ -18,11 +18,26 @@ router = APIRouter(prefix="/auth", tags=["Authentification"])
 @limiteur.limit("5/minute")
 def connexion(request: Request, credentials: LoginRequest) -> TokenResponse:
     """
-    Authentifie l'utilisateur et retourne un token JWT Bearer.
+    Authentifie un utilisateur et retourne un token JWT Bearer.
 
-    - **username** / **password** : comparés aux variables ADMIN_USERNAME et ADMIN_PASSWORD en .env
-    - Retourne un access_token à inclure dans les requêtes protégées : `Authorization: Bearer <token>`
-    - Limité à 5 requêtes par minute par IP (OWASP API4 — protection brute-force)
+    **Exemple de requête** :
+    ```json
+    { "username": "admin", "password": "mon_mot_de_passe" }
+    ```
+
+    **Exemple de réponse** :
+    ```json
+    { "access_token": "eyJhbGci...", "token_type": "bearer" }
+    ```
+
+    Utiliser ensuite le token dans les requêtes protégées :
+    ```
+    Authorization: Bearer eyJhbGci...
+    ```
+
+    - Identifiants comparés aux variables `ADMIN_USERNAME` / `ADMIN_PASSWORD` dans `.env`
+    - Token valide pour la durée définie dans `ACCESS_TOKEN_EXPIRE_MINUTES` (.env, défaut 30 min)
+    - **Limité à 5 requêtes par minute** par IP (protection brute-force, OWASP API4)
     """
     nom_admin = os.getenv("ADMIN_USERNAME", "")
     mot_de_passe_admin = os.getenv("ADMIN_PASSWORD", "")
