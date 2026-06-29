@@ -4,9 +4,10 @@ Route POST /auth/token — authentification par identifiants, retourne un token 
 
 import os
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from loguru import logger
 
+from tomatoscan.api.core.limiter import limiteur
 from tomatoscan.api.core.security import creer_token_acces
 from tomatoscan.api.schemas.auth import LoginRequest, TokenResponse
 
@@ -14,12 +15,14 @@ router = APIRouter(prefix="/auth", tags=["Authentification"])
 
 
 @router.post("/token", response_model=TokenResponse)
-def connexion(credentials: LoginRequest) -> TokenResponse:
+@limiteur.limit("5/minute")
+def connexion(request: Request, credentials: LoginRequest) -> TokenResponse:
     """
     Authentifie l'utilisateur et retourne un token JWT Bearer.
 
     - **username** / **password** : comparés aux variables ADMIN_USERNAME et ADMIN_PASSWORD en .env
     - Retourne un access_token à inclure dans les requêtes protégées : `Authorization: Bearer <token>`
+    - Limité à 5 requêtes par minute par IP (OWASP API4 — protection brute-force)
     """
     nom_admin = os.getenv("ADMIN_USERNAME", "")
     mot_de_passe_admin = os.getenv("ADMIN_PASSWORD", "")
