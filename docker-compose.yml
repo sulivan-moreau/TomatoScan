@@ -1,0 +1,19 @@
+# Services Docker pour TomatoScan
+# Variables requises dans .env : POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      # Volume nommé pour persister les données entre les redémarrages
+      - postgres_donnees:/var/lib/postgresql/data
+
+volumes:
+  postgres_donnees:

@@ -21,6 +21,7 @@ models/
 *.pth
 mlruns/
 mlflow.db
+*.db
 
 # Jupyter
 .ipynb_checkpoints/
