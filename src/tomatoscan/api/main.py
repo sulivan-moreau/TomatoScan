@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from tomatoscan.api.routes.health import router as health_router
+from tomatoscan.api.routes.predict import router as predict_router
+from tomatoscan.api.services import model_service
 
 # Chargement des variables d'environnement depuis .env
 load_dotenv()
@@ -26,6 +28,8 @@ async def lifespan(app: FastAPI):
     env = os.getenv("APP_ENV", "development")
     logger.info(f"TomatoScan API démarrée — environnement : {env}")
     logger.info(f"Variables d'environnement chargées depuis .env")
+    # Chargement unique du modèle au démarrage
+    model_service.initialiser_modele()
     yield
 
 
@@ -47,3 +51,4 @@ app.add_middleware(
 
 # Inclusion des routes
 app.include_router(health_router)
+app.include_router(predict_router)
