@@ -2,9 +2,10 @@
 Route POST /predict — prend une image, retourne la maladie détectée et le score de confiance.
 """
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from loguru import logger
 
+from tomatoscan.api.core.security import obtenir_utilisateur_courant
 from tomatoscan.api.schemas.predict import PredictionResponse
 from tomatoscan.api.services import model_service
 
@@ -17,7 +18,10 @@ TAILLE_MAX_OCTETS = 5 * 1024 * 1024  # 5 Mo
 
 
 @router.post("/predict", response_model=PredictionResponse)
-async def predire_maladie(fichier: UploadFile = File(...)):
+async def predire_maladie(
+    fichier: UploadFile = File(...),
+    _utilisateur: str = Depends(obtenir_utilisateur_courant),
+):
     """
     Analyse une image de feuille de tomate et retourne la maladie détectée.
 

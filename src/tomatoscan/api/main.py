@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
+from tomatoscan.api.routes.auth import router as auth_router
 from tomatoscan.api.routes.health import router as health_router
 from tomatoscan.api.routes.predict import router as predict_router
 from tomatoscan.api.services import model_service
@@ -50,5 +51,6 @@ app.add_middleware(
 )
 
 # Inclusion des routes
+app.include_router(auth_router)
 app.include_router(health_router)
 app.include_router(predict_router)

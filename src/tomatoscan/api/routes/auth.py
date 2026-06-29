@@ -1,0 +1,39 @@
+"""
+Route POST /auth/token — authentification par identifiants, retourne un token JWT.
+"""
+
+import os
+
+from fastapi import APIRouter, HTTPException, status
+from loguru import logger
+
+from tomatoscan.api.core.security import creer_token_acces
+from tomatoscan.api.schemas.auth import LoginRequest, TokenResponse
+
+router = APIRouter(prefix="/auth", tags=["Authentification"])
+
+
+@router.post("/token", response_model=TokenResponse)
+def connexion(credentials: LoginRequest) -> TokenResponse:
+    """
+    Authentifie l'utilisateur et retourne un token JWT Bearer.
+
+    - **username** / **password** : comparés aux variables ADMIN_USERNAME et ADMIN_PASSWORD en .env
+    - Retourne un access_token à inclure dans les requêtes protégées : `Authorization: Bearer <token>`
+    """
+    nom_admin = os.getenv("ADMIN_USERNAME", "")
+    mot_de_passe_admin = os.getenv("ADMIN_PASSWORD", "")
+
+    # Vérification des identifiants — comparaison en temps constant évitée volontairement
+    # car ce projet est monocompte et ne nécessite pas de protection contre le timing attack
+    if credentials.username != nom_admin or credentials.password != mot_de_passe_admin:
+        logger.warning(f"Tentative de connexion échouée pour l'utilisateur : {credentials.username!r}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Identifiants invalides",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = creer_token_acces({"sub": credentials.username})
+    logger.info(f"Connexion réussie pour : {credentials.username!r}")
+    return TokenResponse(access_token=token, token_type="bearer")
