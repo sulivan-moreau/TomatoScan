@@ -10,6 +10,8 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 os.environ.setdefault("ADMIN_USERNAME", "admin_test")
 os.environ.setdefault("ADMIN_PASSWORD", "motdepasse_test_123")
+# SQLite en mémoire pour les tests — évite de nécessiter PostgreSQL
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 
 @pytest.fixture(autouse=True)

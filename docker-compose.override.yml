@@ -1,0 +1,20 @@
+# Environnement preprod/développement — chargé automatiquement par "docker compose up".
+#
+# Objectif : faire tourner TomatoScan en local sans PostgreSQL.
+# Single user, SQLite suffit pour le développement et les tests manuels.
+# En production (VPS), utiliser uniquement docker-compose.yml (PostgreSQL réel).
+#
+# Usage :
+#   docker compose up                          → preprod (ce fichier chargé auto)
+#   docker compose -f docker-compose.yml up    → production seule (PostgreSQL)
+#
+# Variables à définir dans .env pour cet environnement :
+#   DATABASE_URL=sqlite:///./tomatoscan_preprod.db
+#   APP_ENV=development
+
+services:
+  # PostgreSQL non démarré en preprod — remplacé par SQLite côté application.
+  # Le profil "production_only" empêche le démarrage automatique du service.
+  postgres:
+    profiles:
+      - production_only
