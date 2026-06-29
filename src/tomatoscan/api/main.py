@@ -16,6 +16,7 @@ from tomatoscan.api.core.limiter import limiteur
 from tomatoscan.api.routes.auth import router as auth_router
 from tomatoscan.api.routes.health import router as health_router
 from tomatoscan.api.routes.predict import router as predict_router
+from tomatoscan.api.routes.reports import router as reports_router
 from tomatoscan.api.services import model_service
 
 # Chargement des variables d'environnement depuis .env
@@ -79,3 +80,4 @@ app.add_middleware(EnteteSecuriteMiddleware)
 app.include_router(auth_router)
 app.include_router(health_router)
 app.include_router(predict_router)
+app.include_router(reports_router)
