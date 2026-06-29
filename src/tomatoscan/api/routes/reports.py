@@ -23,11 +23,23 @@ def obtenir_rapport(
     _utilisateur: str = Depends(obtenir_utilisateur_courant),
 ) -> RapportResponse:
     """
-    Retourne l'historique d'entraînement MobileNetV2 depuis le fichier CSV.
+    Retourne l'historique complet d'entraînement du modèle MobileNetV2.
 
-    - Chemin du CSV configurable via REPORTS_PATH dans .env
-    - Retourne les métriques par epoch et la meilleure val_accuracy
-    - 404 si le fichier CSV est introuvable
+    **Authentification requise** : `Authorization: Bearer <token>` — obtenu via `POST /auth/token`.
+
+    Lit le fichier CSV défini par `REPORTS_PATH` dans `.env`.
+    Colonnes attendues : `epoch`, `train_loss`, `train_accuracy`, `val_loss`, `val_accuracy`.
+
+    **Format de réponse** :
+    - `fichier` : chemin du CSV lu
+    - `nb_epochs` : nombre total d'epochs enregistrées
+    - `meilleure_val_accuracy` : meilleure précision de validation atteinte
+    - `historique` : liste des métriques par epoch
+
+    **Codes d'erreur** :
+    - `401` : token manquant ou expiré
+    - `404` : fichier CSV introuvable au chemin configuré dans `REPORTS_PATH`
+    - `500` : erreur de lecture ou format CSV invalide
     """
     chemin_csv = os.getenv("REPORTS_PATH", CHEMIN_DEFAUT)
 

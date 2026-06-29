@@ -53,11 +53,65 @@ async def lifespan(app: FastAPI):
     yield
 
 
+_DESCRIPTION = """
+API de détection de maladies sur les feuilles de tomates par deep learning (MobileNetV2).
+
+## Fonctionnalités
+
+- **Prédiction** : envoie une photo de feuille → reçoit la maladie détectée et le score de confiance
+- **Authentification** : JWT Bearer, token obtenu via `/auth/token`
+- **Rapports** : historique d'entraînement du modèle (loss / accuracy par epoch)
+- **Monitoring** : endpoint `/health` pour les health checks
+
+## Authentification
+
+Toutes les routes sauf `/health` et `/auth/token` requièrent un header :
+```
+Authorization: Bearer <token>
+```
+Le token s'obtient via `POST /auth/token` avec les identifiants configurés dans `.env`.
+"""
+
+_TAGS_METADATA = [
+    {
+        "name": "Monitoring",
+        "description": "Health check — vérifie que l'API est en ligne. "
+        "Aucune authentification requise.",
+    },
+    {
+        "name": "Authentification",
+        "description": "Connexion par identifiants (username / password). "
+        "Retourne un token JWT Bearer valide pour les endpoints protégés. "
+        "Limité à 5 requêtes/minute par IP.",
+    },
+    {
+        "name": "Prédiction",
+        "description": "Analyse d'une image de feuille de tomate par MobileNetV2. "
+        "Retourne la classe de maladie détectée et le score de confiance. "
+        "**JWT Bearer requis.**",
+    },
+    {
+        "name": "Rapports",
+        "description": "Historique d'entraînement du modèle MobileNetV2 (loss / accuracy). "
+        "Lit un fichier CSV dont le chemin est configuré dans `.env`. "
+        "**JWT Bearer requis.**",
+    },
+]
+
 app = FastAPI(
     title="TomatoScan API",
-    description="Détection de maladies sur tomates par CNN (MobileNetV2)",
+    description=_DESCRIPTION,
     version="0.1.0",
     lifespan=lifespan,
+    contact={
+        "name": "Sulivan Moreau",
+        "email": "sulivan.moreau@hotmail.fr",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
+    openapi_tags=_TAGS_METADATA,
 )
 
 # Rate limiter — l'instance doit être dans app.state pour que SlowAPIMiddleware la trouve

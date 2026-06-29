@@ -23,10 +23,22 @@ async def predire_maladie(
     _utilisateur: str = Depends(obtenir_utilisateur_courant),
 ):
     """
-    Analyse une image de feuille de tomate et retourne la maladie détectée.
+    Analyse une image de feuille de tomate et retourne la maladie détectée par MobileNetV2.
 
-    - **fichier** : image JPG ou PNG, taille max 5 Mo
-    - Retourne la classe prédite, le score de confiance et un message lisible
+    **Authentification requise** : `Authorization: Bearer <token>` — obtenu via `POST /auth/token`.
+
+    **Formats acceptés** : JPG, JPEG, PNG
+    **Taille maximale** : 5 Mo
+
+    **Réponse** :
+    - `classe` : nom de la classe prédite (ex. `Tomato_Early_blight`, `Tomato_healthy`)
+    - `confiance` : score de confiance entre 0.0 et 1.0
+    - `message` : description lisible (ex. `"Maladie détectée : Early blight (confiance : 92.3%)"`)
+
+    **Codes d'erreur** :
+    - `400` : format non supporté ou fichier dépassant 5 Mo
+    - `401` : token manquant ou expiré
+    - `503` : modèle non chargé (vérifier `MODEL_PATH` dans `.env`)
     """
     # Vérification du format via content-type et extension du fichier
     nom = fichier.filename or ""
