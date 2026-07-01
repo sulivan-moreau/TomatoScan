@@ -72,3 +72,27 @@ def test_reports_fichier_introuvable(monkeypatch):
 
     assert reponse.status_code == 404
     assert "introuvable" in reponse.json()["detail"]
+
+
+def test_reports_csv_malformed(tmp_path, monkeypatch):
+    """open() patché pour lever KeyError lors de la lecture du CSV — attend status 500.
+
+    Simule un fichier lisible mais dont la lecture échoue (colonnes manquantes, encodage
+    corrompu…). Couvre reports.py lignes 69-71 : le bloc except Exception → HTTPException 500.
+    """
+    from unittest.mock import patch
+
+    # Fichier existant pour passer la vérification os.path.isfile() dans la route
+    fichier_csv = tmp_path / "csv_malformed.csv"
+    fichier_csv.write_text("epoch,train_loss\n1,0.5\n", encoding="utf-8")
+    monkeypatch.setenv("REPORTS_PATH", str(fichier_csv))
+
+    # Token obtenu AVANT de patcher open() pour ne pas bloquer l'authentification
+    token = _obtenir_token_valide()
+
+    # Patcher open() pour simuler une erreur de lecture (KeyError → capturé par except Exception)
+    with patch("builtins.open", side_effect=KeyError("epoch")):
+        reponse = client.get("/reports", headers={"Authorization": f"Bearer {token}"})
+
+    assert reponse.status_code == 500
+    assert "erreur" in reponse.json()["detail"].lower()
