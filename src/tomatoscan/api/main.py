@@ -15,9 +15,11 @@ from starlette.responses import Response
 from tomatoscan.api.core.limiter import limiteur
 from tomatoscan.api.routes.auth import router as auth_router
 from tomatoscan.api.routes.health import router as health_router
+from tomatoscan.api.routes.history import router as history_router
 from tomatoscan.api.routes.predict import router as predict_router
 from tomatoscan.api.routes.reports import router as reports_router
 from tomatoscan.api.services import model_service
+from tomatoscan.database.connexion import Base, moteur
 
 # Chargement des variables d'environnement depuis .env
 load_dotenv()
@@ -44,10 +46,13 @@ def _lire_cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Cycle de vie de l'application : log au démarrage."""
+    """Cycle de vie de l'application : initialisation BDD et modèle au démarrage."""
     env = os.getenv("APP_ENV", "development")
     logger.info(f"TomatoScan API démarrée — environnement : {env}")
     logger.info(f"Variables d'environnement chargées depuis .env")
+    # Création des tables BDD si elles n'existent pas encore (idempotent)
+    Base.metadata.create_all(moteur)
+    logger.info("Tables BDD initialisées.")
     # Chargement unique du modèle au démarrage
     model_service.initialiser_modele()
     yield
@@ -134,4 +139,5 @@ app.add_middleware(EnteteSecuriteMiddleware)
 app.include_router(auth_router)
 app.include_router(health_router)
 app.include_router(predict_router)
+app.include_router(history_router)
 app.include_router(reports_router)
