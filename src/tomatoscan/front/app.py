@@ -62,13 +62,7 @@ def inject_css():
     )
 
 
-# --- Pages (placeholders — implémentées dans les passes suivantes) -----------
-
-def page_predict():
-    """Page Analyse (placeholder, implémentée en passe 3)."""
-    st.title("Nouvelle analyse")
-    st.info("Page d'analyse à venir (passe 3).")
-
+# --- Pages placeholders (Historique et Tableau de bord — issues dédiées) ----
 
 def page_history():
     """Page Historique (placeholder)."""
@@ -96,6 +90,8 @@ def sidebar_header():
             st.caption("🔴 API injoignable")
 
         if st.session_state.get("token"):
+            # Affiche le nom de l'utilisateur connecté
+            st.caption(f"Connecté : **{st.session_state.get('username', 'utilisateur')}**")
             if st.button("Déconnexion", use_container_width=True):
                 # Vider toute la session (token + username) et rediriger vers login
                 st.session_state.clear()
@@ -125,7 +121,7 @@ def main():
         navigation = st.navigation(
             {
                 "TomatoScan": [
-                    st.Page(page_predict, title="Analyse", icon=":material/biotech:", default=True),
+                    st.Page("pages/predict.py", title="Analyse", icon=":material/biotech:", default=True),
                     st.Page(page_history, title="Historique", icon=":material/history:"),
                     st.Page(page_dashboard, title="Tableau de bord", icon=":material/bar_chart:"),
                 ]

@@ -42,11 +42,14 @@ def page_connexion() -> None:
                 st.error("Veuillez renseigner votre nom d'utilisateur et votre mot de passe.")
                 return
             try:
-                # Appel API — lève ApiError si identifiants invalides ou réseau KO
-                token = api_client.login(nom_utilisateur, mot_de_passe)
+                # Spinner pendant l'appel réseau pour indiquer la progression
+                with st.spinner("Connexion en cours…"):
+                    token = api_client.login(nom_utilisateur, mot_de_passe)
                 st.session_state.token = token
                 st.session_state.username = nom_utilisateur
                 # Redirection vers la navigation principale
                 st.rerun()
             except ApiError as erreur:
                 st.error(str(erreur))
+
+        st.caption("Mot de passe oublié ? Contactez votre administrateur.")
