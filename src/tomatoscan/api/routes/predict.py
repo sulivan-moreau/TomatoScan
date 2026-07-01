@@ -7,6 +7,7 @@ pour constituer l'historique de l'utilisateur (Issue #32).
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from loguru import logger
+from PIL import UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from tomatoscan.api.core.security import obtenir_utilisateur_courant
@@ -99,6 +100,10 @@ async def predire_maladie(
     # Prédiction
     try:
         classe, confiance = model_service.predire(contenu)
+    except UnidentifiedImageError:
+        # PIL ne reconnaît pas le fichier : le contenu est corrompu malgré l'extension correcte
+        logger.warning(f"Image corrompue ou format non reconnu : {nom!r}")
+        raise HTTPException(status_code=400, detail="Image corrompue ou format non reconnu.")
     except Exception as erreur:
         logger.error(f"Erreur de prédiction : {erreur}")
         raise HTTPException(status_code=503, detail="Erreur lors de la prédiction.")
