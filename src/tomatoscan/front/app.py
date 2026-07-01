@@ -62,13 +62,7 @@ def inject_css():
     )
 
 
-# --- Pages placeholders (Historique et Tableau de bord — issues dédiées) ----
-
-def page_history():
-    """Page Historique (placeholder)."""
-    st.title("Historique des analyses")
-    st.info("Page d'historique à venir.")
-
+# --- Page placeholder (Tableau de bord — issue dédiée) ----------------------
 
 def page_dashboard():
     """Page Tableau de bord (placeholder)."""
@@ -122,7 +116,7 @@ def main():
             {
                 "TomatoScan": [
                     st.Page("pages/predict.py", title="Analyse", icon=":material/biotech:", default=True),
-                    st.Page(page_history, title="Historique", icon=":material/history:"),
+                    st.Page("pages/history.py", title="Historique", icon=":material/history:"),
                     st.Page(page_dashboard, title="Tableau de bord", icon=":material/bar_chart:"),
                 ]
             }

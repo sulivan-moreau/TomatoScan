@@ -4,6 +4,7 @@ Expose :
 - ping()           — vérifie que l'API répond (GET /health)
 - login()          — authentifie l'utilisateur, retourne le token JWT
 - predict()        — envoie une image, retourne le résultat de prédiction
+- get_history()    — récupère l'historique des prédictions de l'utilisateur
 - is_token_valid() — vérifie localement que le token n'est pas expiré
 - fr_label()       — traduit une classe brute du modèle en libellé français
 
@@ -183,6 +184,33 @@ def predict(octets_image: bytes, nom_fichier: str, token: str) -> dict:
     if not reponse.ok:
         detail = _extraire_detail(reponse, f"Erreur {reponse.status_code}.")
         raise ApiError(detail, status_code=reponse.status_code)
+
+    try:
+        return reponse.json()
+    except ValueError:
+        raise ApiError("Réponse de l'API illisible (JSON attendu).")
+
+
+def get_history(token: str) -> list[dict]:
+    """Récupère l'historique des prédictions de l'utilisateur via GET /predictions/history.
+
+    Retourne une liste de dict (id, nom_fichier, classe_predite, confiance, created_at).
+    Lève ApiError si l'API retourne une erreur ou est injoignable.
+    """
+    try:
+        reponse = requests.get(
+            f"{API_URL}/predictions/history",
+            headers=_entetes_auth(token),
+            timeout=TIMEOUT,
+        )
+    except requests.RequestException:
+        raise ApiError("Impossible de joindre le serveur pour récupérer l'historique.")
+
+    if not reponse.ok:
+        raise ApiError(
+            _extraire_detail(reponse, "Impossible de récupérer l'historique."),
+            status_code=reponse.status_code,
+        )
 
     try:
         return reponse.json()

@@ -13,6 +13,13 @@ os.environ.setdefault("ADMIN_PASSWORD", "motdepasse_test_123")
 # SQLite en mémoire pour les tests — évite de nécessiter PostgreSQL
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
+# Création des tables SQLite en mémoire dès le démarrage de la session de tests.
+# SQLAlchemy utilise SingletonThreadPool pour sqlite:///:memory:, ce qui garantit
+# que toutes les sessions créées depuis le même moteur voient les mêmes tables.
+from tomatoscan.database.connexion import Base, moteur  # noqa: E402
+
+Base.metadata.create_all(moteur)
+
 
 @pytest.fixture(autouse=True)
 def reinitialiser_limiteur():
