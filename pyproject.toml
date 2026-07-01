@@ -10,9 +10,9 @@ dependencies = [
     "uvicorn>=0.29.0",
     "python-jose[cryptography]>=3.3.0",
     "python-multipart>=0.0.9",
-    # ML
-    "tensorflow-macos>=2.16.1",
-    "tensorflow-metal>=1.1.0",
+    # ML — tensorflow-macos/metal sont macOS uniquement ; torch gère l'inférence en prod/CI
+    "tensorflow-macos>=2.16.1; sys_platform == 'darwin'",
+    "tensorflow-metal>=1.1.0; sys_platform == 'darwin'",
     "numpy>=1.26.4",
     "pillow>=10.3.0",
     "scikit-learn>=1.4.2",
