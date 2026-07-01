@@ -1,0 +1,88 @@
+# Workflow CI TomatoScan — valide le code avant déploiement automatique via Coolify.
+#
+# Architecture de déploiement :
+#   push sur develop → Coolify déclenche le déploiement preprod
+#                       (SQLite, single user, docker-compose.override.yml sur VPS OVH)
+#   push sur main    → Coolify déclenche le déploiement prod
+#                       (PostgreSQL, docker-compose.yml sur VPS OVH)
+#
+# Modèle MobileNetV2 (.pt) :
+#   Stocké dans un volume Docker persistant sur le VPS — absent de ce dépôt (trop volumineux).
+#   En cas de réentraînement, le nouveau .pt remplace l'ancien dans le volume
+#   via un script de déploiement SSH (copie directe sur le VPS, hors CI).
+#
+# Les tests mockent model_service.predire → le .pt n'est pas requis pendant la CI.
+
+name: CI — Tests & Lint
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  test:
+    name: Tests & Lint (Python 3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # Secrets configurés dans GitHub → Settings → Secrets and variables → Actions
+      # (voir section "Secrets à configurer" en bas de ce fichier)
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+
+      # SQLite local pour les tests — évite toute dépendance externe à PostgreSQL
+      DATABASE_URL: sqlite:///./test.db
+
+      # Le modèle .pt est absent du dépôt : les tests mockent model_service
+      # via unittest.mock.patch → aucun checkpoint réel n'est nécessaire en CI
+      MODEL_PATH: ./models/non_existant.pt
+
+      # Fichier CSV de rapport — les tests qui en ont besoin utilisent tmp_path
+      REPORTS_PATH: models/historique_test.csv
+
+      # Signale à l'application qu'elle s'exécute dans un environnement de test
+      APP_ENV: test
+
+    steps:
+      # Étape 1 — Récupération du code source (branche ou PR)
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      # Étape 2 — Installation de Python 3.11 (version cible du projet)
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Étape 3 — Installation de uv (gestionnaire de dépendances et d'environnements)
+      # enable-cache met en cache le dossier uv pour éviter de re-télécharger les packages
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      # Étape 4 — Installation des dépendances projet + groupe dev (pytest, ruff, pytest-cov)
+      # uv lit uv.lock pour des versions reproductibles entre local et CI
+      - name: Installation des dépendances
+        run: uv sync --extra dev
+
+      # Étape 5 — Vérification du style et des erreurs statiques avec ruff
+      - name: Lint (ruff)
+        run: uv run ruff check src/
+
+      # Étape 6 — Vérification du formatage avec ruff (bloque les PR mal formatées)
+      - name: Format check (ruff)
+        run: uv run ruff format --check src/
+
+      # Étape 7 — Exécution des 25 tests API avec rapport de couverture
+      # Cible : couverture > 80% sur src/tomatoscan/api/
+      - name: Tests (pytest + couverture)
+        run: uv run pytest tests/test_api/ -v --cov=src/tomatoscan/api --cov-report=term-missing
