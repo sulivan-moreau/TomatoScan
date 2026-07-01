@@ -1,21 +1,16 @@
 """Point d'entrée de l'application Streamlit TomatoScan.
 
-Passe 1 — structure de base :
-- configuration de la page,
-- CSS personnalisé (thème vert / blanc / rouge tomate),
-- sidebar avec logo + navigation,
-- affichage conditionné par l'authentification :
-    * non connecté  -> page de connexion uniquement,
-    * connecté      -> Analyse / Historique / Tableau de bord.
-
-Note : l'authentification réelle (JWT) et la page d'analyse sont des
-placeholders à ce stade ; elles seront implémentées dans les passes 2 et 3.
+- Configuration de la page et thème CSS,
+- Sidebar persistante (logo, état API, déconnexion),
+- Vérification de la validité du token JWT à chaque re-run Streamlit,
+- Routing conditionnel : non connecté → login, connecté → Analyse / Historique / Tableau de bord.
 
 Lancement : `streamlit run src/tomatoscan/front/app.py`
 """
 
 import streamlit as st
 
+from pages.login import page_connexion
 from utils import api_client
 
 # Palette TomatoScan (réutilisée dans le CSS).
@@ -67,28 +62,7 @@ def inject_css():
     )
 
 
-# --- Pages (placeholders de la passe 1) -------------------------------------
-
-def page_login():
-    """Page de connexion (placeholder).
-
-    L'authentification JWT sera branchée en passe 2. Pour l'instant, le
-    bouton simule une connexion afin de tester la navigation.
-    """
-    _, centre, _ = st.columns([1, 1.1, 1])
-    with centre:
-        st.markdown("### 🍅 TomatoScan")
-        st.title("Connexion")
-        st.caption("Accédez à votre espace d'analyse des maladies de la tomate.")
-        with st.form("login_form"):
-            st.text_input("Nom d'utilisateur", placeholder="agriculteur01")
-            st.text_input("Mot de passe", type="password", placeholder="••••••••")
-            soumis = st.form_submit_button("Se connecter", use_container_width=True)
-        if soumis:
-            # Placeholder : la vraie vérification arrive en passe 2.
-            st.session_state.token = "placeholder"
-            st.rerun()
-
+# --- Pages (placeholders — implémentées dans les passes suivantes) -----------
 
 def page_predict():
     """Page Analyse (placeholder, implémentée en passe 3)."""
@@ -123,22 +97,30 @@ def sidebar_header():
 
         if st.session_state.get("token"):
             if st.button("Déconnexion", use_container_width=True):
-                st.session_state.pop("token", None)
+                # Vider toute la session (token + username) et rediriger vers login
+                st.session_state.clear()
                 st.rerun()
 
 
 def main():
     """Point d'entrée principal — gère l'état de session et orchestre la navigation."""
-    # Initialisation de l'état d'authentification
+    # Initialisation de l'état d'authentification au premier démarrage
     if "token" not in st.session_state:
         st.session_state.token = None
 
     inject_css()
 
+    # Vérification du token JWT à chaque re-run : si expiré, vider la session
+    token_actuel = st.session_state.get("token")
+    if token_actuel and not api_client.is_token_valid(token_actuel):
+        st.session_state.clear()
+        st.session_state["session_expiree"] = True
+        st.rerun()
+
     # Sidebar toujours visible : logo TomatoScan + état API + déconnexion si connecté
     sidebar_header()
 
-    if st.session_state.token:
+    if st.session_state.get("token"):
         # Utilisateur connecté : navigation complète (Analyse / Historique / Tableau de bord)
         navigation = st.navigation(
             {
@@ -152,7 +134,7 @@ def main():
     else:
         # Non connecté : page de connexion seule, liens de navigation masqués dans la sidebar
         navigation = st.navigation(
-            [st.Page(page_login, title="Connexion")],
+            [st.Page(page_connexion, title="Connexion")],
             position="hidden",
         )
 
