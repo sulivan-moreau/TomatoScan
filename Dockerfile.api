@@ -19,6 +19,10 @@ WORKDIR /app
 # Copie des fichiers de configuration de dépendances uniquement
 COPY pyproject.toml uv.lock ./
 
+# Installation de torch CPU uniquement — évite de télécharger les wheels CUDA/NVIDIA (~2 Go)
+# Doit précéder uv sync pour que uv trouve torch déjà installé et ne le réinstalle pas
+RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
 # Installation des dépendances de production sans construire le package tomatoscan
 # --no-dev       : exclut pytest, ruff et autres outils de développement
 # --no-install-project : installe les dépendances tierces uniquement (pas encore de src/)
