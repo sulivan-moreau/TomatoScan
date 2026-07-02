@@ -1,0 +1,54 @@
+# Fichiers et dossiers exclus des images Docker TomatoScan
+#
+# Règles : aucun secret, aucun fichier lourd, aucun artefact de build local.
+# Les modèles .pt sont montés en volume sur le VPS — jamais dans l'image.
+
+# ─── Environnements virtuels et caches Python ─────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ─── Secrets — ne jamais embarquer dans une image Docker ──────────────────────
+.env
+
+# ─── Modèles de deep learning — montés en volume lecture seule sur le VPS ─────
+# best_model.pt est copié manuellement via SSH, hors pipeline CI/CD
+models/*.pt
+models/*.pth
+models/*.keras
+models/*.h5
+
+# ─── Dataset PlantVillage — trop volumineux (~2 Go), absent de l'image ─────────
+PlantVillage/
+
+# ─── Git et CI ────────────────────────────────────────────────────────────────
+.git/
+.github/
+.gitignore
+
+# ─── Tests et outillage de développement ──────────────────────────────────────
+tests/
+.coverage
+.pytest_cache/
+Makefile
+
+# ─── Notebooks Jupyter ────────────────────────────────────────────────────────
+notebooks/
+
+# ─── Documentation ────────────────────────────────────────────────────────────
+docs/
+README.md
+
+# ─── Bases de données locales ─────────────────────────────────────────────────
+*.db
+
+# ─── Artefacts de build Python ────────────────────────────────────────────────
+dist/
+*.egg-info/
+build/
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

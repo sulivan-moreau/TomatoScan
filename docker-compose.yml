@@ -1,19 +1,77 @@
-# Services Docker pour TomatoScan
-# Variables requises dans .env : POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+# Docker Compose — configuration production TomatoScan
+#
+# Déploiement Coolify sur VPS OVH :
+#   push sur develop → Coolify charge ce fichier + docker-compose.override.yml (préprod SQLite)
+#   push sur main    → Coolify charge ce fichier seul (prod PostgreSQL)
+#
+# Prérequis avant le premier déploiement :
+#   1. Copier .env.example en .env et remplir toutes les valeurs
+#   2. Déposer best_model.pt dans le volume Docker models/ sur le VPS
+#      (copie SSH directe — le .pt n'est jamais dans l'image Docker)
+#   3. Configurer les secrets GitHub : SECRET_KEY, ADMIN_USERNAME, ADMIN_PASSWORD
 
 services:
+
+  # ─── API FastAPI ──────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    # Toutes les variables d'environnement chargées depuis .env (jamais de valeurs en dur ici)
+    env_file:
+      - .env
+    volumes:
+      # Modèle MobileNetV2 monté en lecture seule — trop volumineux pour être dans l'image
+      # Le fichier .pt est déposé manuellement sur le VPS via un script SSH
+      - ./models:/app/models:ro
+    healthcheck:
+      # Vérifie que l'API répond sur /health avant de démarrer le frontend
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─── Frontend Streamlit ───────────────────────────────────────────────────────
+  front:
+    build:
+      context: .
+      dockerfile: Dockerfile.front
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    # Le frontend démarre uniquement quand l'API est opérationnelle (healthcheck OK)
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ─── Base de données PostgreSQL 16 (production uniquement) ───────────────────
   postgres:
     image: postgres:16
     restart: unless-stopped
     environment:
+      # Variables lues depuis .env — ne jamais écrire les credentials en dur ici
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
-      # Volume nommé pour persister les données entre les redémarrages
+      # Volume nommé pour persister les données entre les redémarrages du conteneur
       - postgres_donnees:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready vérifie que PostgreSQL accepte les connexions
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
+  # Volume nommé PostgreSQL — survit aux arrêts et suppressions de conteneur
   postgres_donnees:
