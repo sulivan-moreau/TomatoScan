@@ -64,6 +64,7 @@ def inject_css():
 
 # --- Page placeholder (Tableau de bord — issue dédiée) ----------------------
 
+
 def page_dashboard():
     """Page Tableau de bord (placeholder)."""
     st.title("Tableau de bord")
@@ -85,7 +86,9 @@ def sidebar_header():
 
         if st.session_state.get("token"):
             # Affiche le nom de l'utilisateur connecté
-            st.caption(f"Connecté : **{st.session_state.get('username', 'utilisateur')}**")
+            st.caption(
+                f"Connecté : **{st.session_state.get('username', 'utilisateur')}**"
+            )
             if st.button("Déconnexion", use_container_width=True):
                 # Vider toute la session (token + username) et rediriger vers login
                 st.session_state.clear()
@@ -115,9 +118,22 @@ def main():
         navigation = st.navigation(
             {
                 "TomatoScan": [
-                    st.Page("pages/predict.py", title="Analyse", icon=":material/biotech:", default=True),
-                    st.Page("pages/history.py", title="Historique", icon=":material/history:"),
-                    st.Page(page_dashboard, title="Tableau de bord", icon=":material/bar_chart:"),
+                    st.Page(
+                        "pages/predict.py",
+                        title="Analyse",
+                        icon=":material/biotech:",
+                        default=True,
+                    ),
+                    st.Page(
+                        "pages/history.py",
+                        title="Historique",
+                        icon=":material/history:",
+                    ),
+                    st.Page(
+                        page_dashboard,
+                        title="Tableau de bord",
+                        icon=":material/bar_chart:",
+                    ),
                 ]
             }
         )

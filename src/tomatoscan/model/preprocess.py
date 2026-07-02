@@ -16,7 +16,9 @@ def obtenir_classes_tomates(dossier_dataset: str) -> list[str]:
     try:
         tous_les_dossiers = sorted(os.listdir(dossier_dataset))
         classes_tomates = [d for d in tous_les_dossiers if d.startswith("Tomato")]
-        logger.info(f"{len(classes_tomates)} classes Tomate trouvées : {classes_tomates}")
+        logger.info(
+            f"{len(classes_tomates)} classes Tomate trouvées : {classes_tomates}"
+        )
         return classes_tomates
     except FileNotFoundError:
         logger.error(f"Dossier dataset introuvable : {dossier_dataset}")
@@ -48,20 +50,24 @@ def creer_transforms(augmentation: bool = True):
 
     if augmentation:
         # Simule les conditions terrain : lumière variable, angles différents, photos à la main
-        return transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomRotation(15),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-            transforms.ToTensor(),
-            normalisation,
-        ])
+        return transforms.Compose(
+            [
+                transforms.Resize((224, 224)),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomRotation(15),
+                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+                transforms.ToTensor(),
+                normalisation,
+            ]
+        )
     else:
-        return transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            normalisation,
-        ])
+        return transforms.Compose(
+            [
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                normalisation,
+            ]
+        )
 
 
 class TransformDataset(Dataset):
@@ -104,8 +110,7 @@ def charger_dataset(
 
         # Mapping des indices globaux ImageFolder (5-14) vers les indices relatifs Tomato (0-9)
         mapping_labels = {
-            dataset_base.class_to_idx[nom]: i
-            for i, nom in enumerate(noms_classes)
+            dataset_base.class_to_idx[nom]: i for i, nom in enumerate(noms_classes)
         }
         logger.info(f"Mapping labels : {mapping_labels}")
 
@@ -152,9 +157,15 @@ def charger_dataset(
             mapping_labels,
         )
 
-        dataloader_train = DataLoader(dataset_train, batch_size=taille_batch, shuffle=True, num_workers=0)
-        dataloader_val = DataLoader(dataset_val, batch_size=taille_batch, shuffle=False, num_workers=0)
-        dataloader_test = DataLoader(dataset_test, batch_size=taille_batch, shuffle=False, num_workers=0)
+        dataloader_train = DataLoader(
+            dataset_train, batch_size=taille_batch, shuffle=True, num_workers=0
+        )
+        dataloader_val = DataLoader(
+            dataset_val, batch_size=taille_batch, shuffle=False, num_workers=0
+        )
+        dataloader_test = DataLoader(
+            dataset_test, batch_size=taille_batch, shuffle=False, num_workers=0
+        )
 
         logger.info(
             f"Dataset chargé : {len(noms_classes)} classes, split 70/15/15 — "

@@ -76,7 +76,9 @@ def obtenir_rapport(
     # Calcul de la meilleure val_accuracy sur toutes les epochs
     meilleure_val_accuracy = max((e.val_accuracy for e in historique), default=0.0)
 
-    logger.info(f"Rapport lu : {len(historique)} epochs, meilleure val_acc={meilleure_val_accuracy:.4f}")
+    logger.info(
+        f"Rapport lu : {len(historique)} epochs, meilleure val_acc={meilleure_val_accuracy:.4f}"
+    )
 
     return RapportResponse(
         fichier=chemin_csv,

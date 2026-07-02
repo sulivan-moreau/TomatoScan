@@ -46,7 +46,9 @@ def construire_modele(nombre_classes: int) -> nn.Module:
 
     nb_total = sum(p.numel() for p in modele.parameters())
     nb_entrainables = sum(p.numel() for p in modele.parameters() if p.requires_grad)
-    logger.info(f"Modèle construit : {nb_total:,} paramètres total, {nb_entrainables:,} entraînables")
+    logger.info(
+        f"Modèle construit : {nb_total:,} paramètres total, {nb_entrainables:,} entraînables"
+    )
 
     return modele
 
@@ -93,7 +95,9 @@ def executer_epoch(
     return loss_moyenne, accuracy
 
 
-def sauvegarder_historique(historique: list[dict], dossier_modele: str, horodatage: str) -> str:
+def sauvegarder_historique(
+    historique: list[dict], dossier_modele: str, horodatage: str
+) -> str:
     """
     Sauvegarde l'historique d'entraînement (loss/accuracy par epoch) dans un CSV.
     Retourne le chemin du fichier créé.
@@ -145,7 +149,9 @@ def entrainer_modele(
     device = selectionner_device()
     nombre_classes = len(noms_classes)
     horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
-    chemin_meilleur_modele = os.path.join(dossier_modele, f"mobilenetv2_best_{horodatage}.pt")
+    chemin_meilleur_modele = os.path.join(
+        dossier_modele, f"mobilenetv2_best_{horodatage}.pt"
+    )
 
     modele = construire_modele(nombre_classes).to(device)
     criterion = nn.CrossEntropyLoss()
@@ -160,11 +166,18 @@ def entrainer_modele(
     try:
         for epoch in range(1, epochs + 1):
             train_loss, train_acc = executer_epoch(
-                modele, dataloader_train, criterion, device,
-                entrainement=True, optimizer=optimizer,
+                modele,
+                dataloader_train,
+                criterion,
+                device,
+                entrainement=True,
+                optimizer=optimizer,
             )
             val_loss, val_acc = executer_epoch(
-                modele, dataloader_val, criterion, device,
+                modele,
+                dataloader_val,
+                criterion,
+                device,
                 entrainement=False,
             )
 
@@ -174,30 +187,37 @@ def entrainer_modele(
                 f"val_loss: {val_loss:.4f} val_acc: {val_acc:.4f}"
             )
 
-            historique.append({
-                "epoch": epoch,
-                "train_loss": round(train_loss, 4),
-                "train_accuracy": round(train_acc, 4),
-                "val_loss": round(val_loss, 4),
-                "val_accuracy": round(val_acc, 4),
-            })
+            historique.append(
+                {
+                    "epoch": epoch,
+                    "train_loss": round(train_loss, 4),
+                    "train_accuracy": round(train_acc, 4),
+                    "val_loss": round(val_loss, 4),
+                    "val_accuracy": round(val_acc, 4),
+                }
+            )
 
             # Sauvegarde si val_loss s'améliore
             if val_loss < meilleure_val_loss:
                 meilleure_val_loss = val_loss
                 epochs_sans_amelioration = 0
 
-                torch.save({
-                    "epoch": epoch,
-                    "model_state_dict": modele.state_dict(),
-                    "val_accuracy": val_acc,
-                    "class_names": noms_classes,
-                }, chemin_meilleur_modele)
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": modele.state_dict(),
+                        "val_accuracy": val_acc,
+                        "class_names": noms_classes,
+                    },
+                    chemin_meilleur_modele,
+                )
 
                 logger.info(f"Meilleur modèle sauvegardé (val_loss: {val_loss:.4f})")
             else:
                 epochs_sans_amelioration += 1
-                logger.info(f"Pas d'amélioration depuis {epochs_sans_amelioration} epoch(s)")
+                logger.info(
+                    f"Pas d'amélioration depuis {epochs_sans_amelioration} epoch(s)"
+                )
 
             scheduler.step()
 
@@ -207,7 +227,9 @@ def entrainer_modele(
                 break
 
         sauvegarder_historique(historique, dossier_modele, horodatage)
-        logger.info(f"Entraînement terminé — meilleur modèle : {chemin_meilleur_modele}")
+        logger.info(
+            f"Entraînement terminé — meilleur modèle : {chemin_meilleur_modele}"
+        )
 
     except Exception as erreur:
         logger.error(f"Erreur pendant l'entraînement : {erreur}")
@@ -219,6 +241,8 @@ def entrainer_modele(
 if __name__ == "__main__":
     from tomatoscan.model.preprocess import charger_dataset
 
-    train_loader, val_loader, _, classes = charger_dataset("./PlantVillage/PlantVillage/")
+    train_loader, val_loader, _, classes = charger_dataset(
+        "./PlantVillage/PlantVillage/"
+    )
     chemin = entrainer_modele(train_loader, val_loader, classes, epochs=20)
     print(f"Modèle sauvegardé : {chemin}")

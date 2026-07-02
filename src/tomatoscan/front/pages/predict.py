@@ -67,7 +67,9 @@ with colonne_resultat:
             elif erreur.status_code == 400:
                 st.error("Image invalide — vérifiez le format (jpg/png).")
             elif erreur.status_code == 503:
-                st.error("Service temporairement indisponible, réessayez dans quelques instants.")
+                st.error(
+                    "Service temporairement indisponible, réessayez dans quelques instants."
+                )
             else:
                 # Autres erreurs (réseau, 500…) : message générique.
                 st.error(str(erreur))
@@ -118,4 +120,6 @@ with colonne_resultat:
         st.progress(int(round(pourcent)))
         st.markdown(f"### {pourcent:.2f} %")
     else:
-        st.info("Importez une image puis cliquez sur « Analyser » pour afficher le diagnostic.")
+        st.info(
+            "Importez une image puis cliquez sur « Analyser » pour afficher le diagnostic."
+        )

@@ -24,11 +24,13 @@ _etat: dict = {
 }
 
 # Transformations identiques à celles utilisées pendant l'évaluation (sans augmentation)
-_transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+_transform = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ]
+)
 
 
 def initialiser_modele() -> None:
@@ -39,7 +41,9 @@ def initialiser_modele() -> None:
     chemin = os.getenv("MODEL_PATH", CHEMIN_MODELE_PAR_DEFAUT)
 
     if not os.path.exists(chemin):
-        logger.error(f"Checkpoint introuvable : {chemin} — endpoint /predict retournera 503")
+        logger.error(
+            f"Checkpoint introuvable : {chemin} — endpoint /predict retournera 503"
+        )
         return
 
     try:

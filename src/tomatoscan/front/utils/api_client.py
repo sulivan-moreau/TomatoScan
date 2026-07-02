@@ -31,8 +31,8 @@ except ImportError:  # python-dotenv absent : on ignore silencieusement.
 API_URL = os.getenv("TOMATOSCAN_API_URL", "http://localhost:8000").rstrip("/")
 
 # Délais d'attente (en secondes).
-TIMEOUT = 10           # requêtes courtes (health, login)
-TIMEOUT_PREDICT = 30   # l'inférence CNN peut être plus longue
+TIMEOUT = 10  # requêtes courtes (health, login)
+TIMEOUT_PREDICT = 30  # l'inférence CNN peut être plus longue
 
 
 # --- Correspondance classes du modèle → libellés français -------------------
@@ -60,6 +60,7 @@ def fr_label(classe: str) -> str:
 
 # --- Classe d'erreur --------------------------------------------------------
 
+
 class ApiError(Exception):
     """Erreur métier renvoyée par le client API.
 
@@ -73,6 +74,7 @@ class ApiError(Exception):
 
 
 # --- Outils internes --------------------------------------------------------
+
 
 def _entetes_auth(token: str) -> dict:
     """Construit l'en-tête d'authentification Bearer."""
@@ -88,6 +90,7 @@ def _extraire_detail(reponse, message_defaut: str) -> str:
 
 
 # --- Fonctions publiques ----------------------------------------------------
+
 
 def ping() -> bool:
     """Vérifie que l'API répond (GET /health).
@@ -166,7 +169,9 @@ def predict(octets_image: bytes, nom_fichier: str, token: str) -> dict:
     Lève ApiError (avec status_code) en cas d'erreur HTTP ou réseau.
     """
     # Déduction du type MIME à partir de l'extension du fichier
-    extension = str(nom_fichier).lower().rsplit(".", 1)[-1] if "." in str(nom_fichier) else ""
+    extension = (
+        str(nom_fichier).lower().rsplit(".", 1)[-1] if "." in str(nom_fichier) else ""
+    )
     type_contenu = "image/png" if extension == "png" else "image/jpeg"
 
     try:
@@ -179,7 +184,9 @@ def predict(octets_image: bytes, nom_fichier: str, token: str) -> dict:
         )
     except requests.RequestException:
         # Erreur réseau : pas de code HTTP disponible
-        raise ApiError("Impossible de joindre le serveur pour l'analyse.", status_code=None)
+        raise ApiError(
+            "Impossible de joindre le serveur pour l'analyse.", status_code=None
+        )
 
     if not reponse.ok:
         detail = _extraire_detail(reponse, f"Erreur {reponse.status_code}.")

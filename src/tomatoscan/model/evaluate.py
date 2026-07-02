@@ -84,7 +84,9 @@ def afficher_confusion_matrix(
     matrice_normalisee = matrice.astype(float) / matrice.sum(axis=1, keepdims=True)
 
     fig, ax = plt.subplots(figsize=(12, 10))
-    image_matrice = ax.imshow(matrice_normalisee, interpolation="nearest", cmap=plt.cm.Blues)
+    image_matrice = ax.imshow(
+        matrice_normalisee, interpolation="nearest", cmap=plt.cm.Blues
+    )
     plt.colorbar(image_matrice, ax=ax)
 
     ax.set_xticks(range(len(noms_classes)))
@@ -98,7 +100,9 @@ def afficher_confusion_matrix(
         for j in range(len(noms_classes)):
             valeur = matrice_normalisee[i, j]
             couleur_texte = "white" if valeur > seuil else "black"
-            ax.text(j, i, f"{valeur:.2f}", ha="center", va="center", color=couleur_texte)
+            ax.text(
+                j, i, f"{valeur:.2f}", ha="center", va="center", color=couleur_texte
+            )
 
     ax.set_xlabel("Classe prédite")
     ax.set_ylabel("Classe réelle")
@@ -137,7 +141,8 @@ def generer_rapport(
     accuracy_test = rapport_classification["accuracy"]
 
     classes_sous_performantes = [
-        classe for classe in noms_classes
+        classe
+        for classe in noms_classes
         if rapport_classification[classe]["f1-score"] < 0.80
     ]
 
@@ -152,7 +157,9 @@ def generer_rapport(
     }
 
     horodatage = datetime.now().strftime("%Y%m%d_%H%M%S")
-    chemin_rapport = os.path.join(dossier_rapport, f"rapport_evaluation_{horodatage}.json")
+    chemin_rapport = os.path.join(
+        dossier_rapport, f"rapport_evaluation_{horodatage}.json"
+    )
 
     try:
         with open(chemin_rapport, "w", encoding="utf-8") as fichier:
@@ -162,7 +169,9 @@ def generer_rapport(
         logger.info(f"Accuracy test : {accuracy_test:.4f}")
 
         if classes_sous_performantes:
-            logger.warning(f"Classes sous-performantes (F1 < 80%) : {classes_sous_performantes}")
+            logger.warning(
+                f"Classes sous-performantes (F1 < 80%) : {classes_sous_performantes}"
+            )
 
         return chemin_rapport
 
@@ -193,8 +202,11 @@ if __name__ == "__main__":
     labels_reels, predictions = executer_inference(modele, test_loader, device)
 
     chemin_rapport = generer_rapport(
-        labels_reels, predictions, noms_classes,
-        meilleure_epoch, meilleure_accuracy,
+        labels_reels,
+        predictions,
+        noms_classes,
+        meilleure_epoch,
+        meilleure_accuracy,
     )
     print(f"Rapport généré : {chemin_rapport}")
     afficher_confusion_matrix(labels_reels, predictions, noms_classes)
