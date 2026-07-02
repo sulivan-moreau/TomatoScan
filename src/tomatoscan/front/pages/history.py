@@ -32,7 +32,9 @@ except ApiError as erreur:
     st.stop()
 
 if not entrees:
-    st.info("Aucune analyse enregistrée pour l'instant. Lancez votre première analyse !")
+    st.info(
+        "Aucune analyse enregistrée pour l'instant. Lancez votre première analyse !"
+    )
     st.stop()
 
 # Construction du DataFrame pour l'affichage

@@ -103,7 +103,9 @@ async def predire_maladie(
     except UnidentifiedImageError:
         # PIL ne reconnaît pas le fichier : le contenu est corrompu malgré l'extension correcte
         logger.warning(f"Image corrompue ou format non reconnu : {nom!r}")
-        raise HTTPException(status_code=400, detail="Image corrompue ou format non reconnu.")
+        raise HTTPException(
+            status_code=400, detail="Image corrompue ou format non reconnu."
+        )
     except Exception as erreur:
         logger.error(f"Erreur de prédiction : {erreur}")
         raise HTTPException(status_code=503, detail="Erreur lors de la prédiction.")
@@ -112,7 +114,9 @@ async def predire_maladie(
     if "healthy" in classe.lower():
         message = "Tomate saine — aucune maladie détectée."
     else:
-        nom_maladie = classe.replace("Tomato_", "").replace("Tomato__", "").replace("_", " ")
+        nom_maladie = (
+            classe.replace("Tomato_", "").replace("Tomato__", "").replace("_", " ")
+        )
         message = f"Maladie détectée : {nom_maladie} (confiance : {confiance:.1%})"
 
     # Sauvegarde de la prédiction en BDD (non bloquante si la BDD est indisponible)
@@ -126,7 +130,9 @@ async def predire_maladie(
         )
         session.add(enregistrement)
         session.commit()
-        logger.info(f"Prédiction sauvegardée pour {_utilisateur!r} : {classe} ({confiance:.1%})")
+        logger.info(
+            f"Prédiction sauvegardée pour {_utilisateur!r} : {classe} ({confiance:.1%})"
+        )
     except Exception as erreur_bdd:
         logger.warning(f"Sauvegarde BDD échouée (non bloquante) : {erreur_bdd}")
         try:

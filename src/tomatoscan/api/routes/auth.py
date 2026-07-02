@@ -45,7 +45,9 @@ def connexion(request: Request, credentials: LoginRequest) -> TokenResponse:
     # Vérification des identifiants — comparaison en temps constant évitée volontairement
     # car ce projet est monocompte et ne nécessite pas de protection contre le timing attack
     if credentials.username != nom_admin or credentials.password != mot_de_passe_admin:
-        logger.warning(f"Tentative de connexion échouée pour l'utilisateur : {credentials.username!r}")
+        logger.warning(
+            f"Tentative de connexion échouée pour l'utilisateur : {credentials.username!r}"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Identifiants invalides",

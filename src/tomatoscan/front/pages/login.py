@@ -39,7 +39,9 @@ def page_connexion() -> None:
         if soumis:
             # Validation basique des champs vides avant d'appeler l'API
             if not nom_utilisateur or not mot_de_passe:
-                st.error("Veuillez renseigner votre nom d'utilisateur et votre mot de passe.")
+                st.error(
+                    "Veuillez renseigner votre nom d'utilisateur et votre mot de passe."
+                )
                 return
             try:
                 # Spinner pendant l'appel réseau pour indiquer la progression

@@ -30,7 +30,9 @@ def obtenir_historique(
         utilisateur = session.query(User).filter_by(username=nom_utilisateur).first()
         if utilisateur is None:
             # Aucun enregistrement BDD pour cet utilisateur — liste vide
-            logger.debug(f"Utilisateur {nom_utilisateur!r} absent de la BDD, historique vide.")
+            logger.debug(
+                f"Utilisateur {nom_utilisateur!r} absent de la BDD, historique vide."
+            )
             return []
 
         # Récupération des prédictions triées par date décroissante (la plus récente en premier)
@@ -40,7 +42,9 @@ def obtenir_historique(
             .order_by(Prediction.created_at.desc())
             .all()
         )
-        logger.debug(f"{len(predictions)} prédiction(s) trouvée(s) pour {nom_utilisateur!r}.")
+        logger.debug(
+            f"{len(predictions)} prédiction(s) trouvée(s) pour {nom_utilisateur!r}."
+        )
         return predictions
 
     except Exception as erreur:
