@@ -1,0 +1,57 @@
+# Provisioning des règles d'alerte Grafana Unified Alerting
+# Déclenche une alerte si le taux d'erreurs /predict dépasse 0.1 req/s sur 5 minutes.
+
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: TomatoScan
+    folder: TomatoScan
+    # Évaluation toutes les minutes
+    interval: 1m
+    rules:
+      - uid: tomatoscan-error-rate
+        title: "Taux d'erreurs TomatoScan élevé"
+        # Condition C = seuil sur la requête A
+        condition: C
+        data:
+          # Requête A — taux d'erreurs sur 5 minutes
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: "sum(rate(tomatoscan_errors_total[5m]))"
+              refId: A
+          # Condition C — seuil > 0.1 req/s
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              refId: C
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 0.1
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    type: last
+        # L'alerte se déclenche après 1 minute de dépassement continu
+        for: 1m
+        annotations:
+          summary: "Taux d'erreurs TomatoScan > 0.1 req/s depuis 1 minute"
+          description: "Vérifier les logs de l'API FastAPI et l'état du modèle MobileNetV2."
+        labels:
+          severity: warning
+        noDataState: NoData
+        execErrState: Error
