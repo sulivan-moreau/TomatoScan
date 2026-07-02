@@ -1,0 +1,18 @@
+# Configuration Prometheus pour TomatoScan
+#
+# Prometheus scrape l'endpoint /metrics de l'API FastAPI toutes les 15 secondes.
+# L'API est joignable via son nom de service Docker sur le réseau coolify.
+
+global:
+  # Intervalle de collecte des métriques — 15 s est la valeur recommandée pour Prometheus
+  scrape_interval: 15s
+  # Délai d'évaluation des règles d'alerte
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Job de scrape de l'API TomatoScan
+  - job_name: tomatoscan
+    static_configs:
+      # 'api' est le nom du service Docker — résolvable sur le réseau coolify
+      - targets: ['api:8000']
+    metrics_path: /metrics

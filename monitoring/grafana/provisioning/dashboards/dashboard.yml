@@ -1,0 +1,17 @@
+# Provisioning automatique des dashboards Grafana
+# Grafana charge les fichiers JSON depuis le dossier 'path' au démarrage.
+
+apiVersion: 1
+
+providers:
+  - name: TomatoScan
+    # Identifiant unique du provider de dashboards
+    orgId: 1
+    type: file
+    # Dossier dans lequel Grafana cherche les fichiers JSON de dashboards
+    options:
+      path: /var/lib/grafana/dashboards
+    # Empêche la modification des dashboards provisionnés depuis l'interface Grafana
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true

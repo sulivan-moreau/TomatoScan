@@ -70,9 +70,45 @@ services:
     networks:
       - coolify
 
+  # ─── Prometheus — collecte les métriques exposées sur /metrics ──────────────
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      # Rétention des données sur 30 jours — évite une croissance illimitée du volume
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      # Configuration du scrape — cible l'API sur le réseau coolify
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - coolify
+
+  # ─── Grafana — visualisation des métriques Prometheus ───────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      # Mot de passe admin Grafana — défini dans .env, jamais en dur ici
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      # Volume persistant pour les dashboards et plugins Grafana
+      - grafana_data:/var/lib/grafana
+      # Provisioning automatique : datasources, dashboards, alertes
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      # Fichiers JSON des dashboards chargés au démarrage
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - coolify
+
 volumes:
   # Volume nommé PostgreSQL — survit aux arrêts et suppressions de conteneur
   postgres_donnees:
+  # Volume nommé Grafana — conserve les dashboards et préférences utilisateur
+  grafana_data:
 
 networks:
   coolify:

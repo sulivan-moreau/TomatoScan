@@ -1,0 +1,15 @@
+# Provisioning automatique de la datasource Prometheus dans Grafana
+# Ce fichier est chargé au démarrage de Grafana — aucune configuration manuelle requise.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    # UID utilisé pour référencer cette datasource dans les dashboards et alertes
+    uid: prometheus
+    type: prometheus
+    # URL interne Docker — Prometheus est joignable via son nom de service sur coolify
+    url: http://prometheus:9090
+    access: proxy
+    isDefault: true
+    editable: false
