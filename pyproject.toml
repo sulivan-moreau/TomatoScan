@@ -30,8 +30,8 @@ dependencies = [
     "prometheus-client>=0.20.0",
     # Dataset
     "kaggle>=1.6.0",
-    "torch>=2.12.1",
-    "torchvision>=0.27.1",
+    "torch>=2.3.0",
+    "torchvision>=0.18.0",
     "slowapi>=0.1.10",
 ]
 
@@ -42,6 +42,9 @@ dev = [
     "pytest-cov>=5.0.0",
     "ruff>=0.4.0",
 ]
+
+[tool.uv]
+constraint-dependencies = ["torch"]
 
 [build-system]
 requires = ["hatchling"]
