@@ -1,0 +1,39 @@
+# Dockerfile pour l'API FastAPI TomatoScan
+#
+# Stratégie de cache Docker en deux passes :
+#   1. Copie pyproject.toml + uv.lock → installe les dépendances (couche stable)
+#   2. Copie src/ → installe le package tomatoscan (couche qui change souvent)
+# Une modification du code source ne relance pas l'installation des dépendances.
+
+# Image de base Python 3.11 slim — légère, sans outils de développement inutiles
+FROM python:3.11-slim
+
+# Installation de uv depuis l'image officielle Astral (aucune dépendance pip requise)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Répertoire de travail à l'intérieur du conteneur
+WORKDIR /app
+
+# --- Étape 1 : dépendances (couche mise en cache tant que pyproject.toml/uv.lock ne changent pas) ---
+
+# Copie des fichiers de configuration de dépendances uniquement
+COPY pyproject.toml uv.lock ./
+
+# Installation des dépendances de production sans construire le package tomatoscan
+# --no-dev       : exclut pytest, ruff et autres outils de développement
+# --no-install-project : installe les dépendances tierces uniquement (pas encore de src/)
+RUN uv sync --no-dev --no-install-project
+
+# --- Étape 2 : code source (couche invalidée à chaque modification du code) ---
+
+# Copie du code source de l'API
+COPY src/ ./src/
+
+# Finalisation : installation du package tomatoscan dans l'environnement virtuel
+RUN uv sync --no-dev
+
+# Port d'écoute de l'API FastAPI (doit correspondre à APP_PORT dans .env)
+EXPOSE 8000
+
+# Démarrage de l'API via uvicorn — écoute sur toutes les interfaces réseau
+CMD ["uv", "run", "uvicorn", "tomatoscan.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

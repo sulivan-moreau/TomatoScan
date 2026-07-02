@@ -1,20 +1,28 @@
-# Environnement preprod/développement — chargé automatiquement par "docker compose up".
+# Docker Compose override — environnement préprod / développement local
 #
-# Objectif : faire tourner TomatoScan en local sans PostgreSQL.
-# Single user, SQLite suffit pour le développement et les tests manuels.
-# En production (VPS), utiliser uniquement docker-compose.yml (PostgreSQL réel).
+# Chargé automatiquement par "docker compose up" (pas besoin de -f).
+# Remplace la configuration PostgreSQL de docker-compose.yml par SQLite local.
 #
-# Usage :
-#   docker compose up                          → preprod (ce fichier chargé auto)
-#   docker compose -f docker-compose.yml up    → production seule (PostgreSQL)
+# Différences avec la production :
+#   - SQLite fichier local (pas de service postgres)
+#   - APP_ENV=development (logs plus verbeux, rechargement automatique uvicorn)
 #
-# Variables à définir dans .env pour cet environnement :
-#   DATABASE_URL=sqlite:///./tomatoscan_preprod.db
-#   APP_ENV=development
+# Pour lancer en mode production uniquement (PostgreSQL, ignorer ce fichier) :
+#   docker compose -f docker-compose.yml up
 
 services:
-  # PostgreSQL non démarré en preprod — remplacé par SQLite côté application.
+
+  # ─── Override de l'API : SQLite à la place de PostgreSQL ─────────────────────
+  api:
+    environment:
+      # Remplace DATABASE_URL définie dans .env → SQLite local, pas de service postgres requis
+      DATABASE_URL: sqlite:///./tomatoscan_preprod.db
+      # Signale à l'application qu'elle tourne en mode développement (APP_ENV lu par main.py)
+      APP_ENV: development
+
+  # ─── PostgreSQL désactivé en préprod ─────────────────────────────────────────
   # Le profil "production_only" empêche le démarrage automatique du service.
+  # "docker compose up" ne démarrera pas postgres, l'API utilisera SQLite.
   postgres:
     profiles:
       - production_only

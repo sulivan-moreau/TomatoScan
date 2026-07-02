@@ -1,0 +1,39 @@
+# Dockerfile pour le frontend Streamlit TomatoScan
+#
+# Le frontend utilise pip + requirements.txt (indépendant de pyproject.toml)
+# car il n'a besoin que de streamlit, requests, pandas et python-dotenv.
+#
+# PYTHONPATH=/app/src permet d'importer tomatoscan.front.* sans installer
+# le package complet via uv (évite les dépendances ML lourdes dans l'image frontend).
+
+# Image de base Python 3.11 slim — même version que l'API pour cohérence
+FROM python:3.11-slim
+
+# Installation de uv — disponible dans le conteneur pour cohérence avec l'API
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Répertoire de travail à l'intérieur du conteneur
+WORKDIR /app
+
+# --- Étape 1 : dépendances (couche stable tant que requirements.txt ne change pas) ---
+
+# Copie du fichier de dépendances frontend uniquement
+COPY src/tomatoscan/front/requirements.txt ./requirements.txt
+
+# Installation via pip — pas de pyproject.toml ni de uv.lock pour le frontend
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- Étape 2 : code source (couche invalidée à chaque modification du code) ---
+
+# Copie du code source complet (nécessaire pour les imports tomatoscan.front.*)
+# Le package tomatoscan n'est pas installé : PYTHONPATH permet à Python de le trouver dans src/
+COPY src/ ./src/
+
+# Rend le package tomatoscan importable sans installation (évite les dépendances ML)
+ENV PYTHONPATH=/app/src
+
+# Port d'écoute du frontend Streamlit
+EXPOSE 8501
+
+# Démarrage du frontend Streamlit — écoute sur toutes les interfaces réseau
+CMD ["streamlit", "run", "src/tomatoscan/front/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
