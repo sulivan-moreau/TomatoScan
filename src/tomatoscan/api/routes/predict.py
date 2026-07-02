@@ -78,7 +78,7 @@ async def predire_maladie(
         logger.warning(f"Format refusé : {content_type} / {nom}")
         raise HTTPException(
             status_code=400,
-            detail=f"Format non supporté. Formats acceptés : jpg, jpeg, png.",
+            detail="Format non supporté. Formats acceptés : jpg, jpeg, png.",
         )
 
     # Lecture des bytes et vérification de la taille
@@ -87,7 +87,7 @@ async def predire_maladie(
     if len(contenu) > TAILLE_MAX_OCTETS:
         raise HTTPException(
             status_code=400,
-            detail=f"Fichier trop volumineux. Taille max : 5 Mo.",
+            detail="Fichier trop volumineux. Taille max : 5 Mo.",
         )
 
     # Vérification que le modèle est disponible

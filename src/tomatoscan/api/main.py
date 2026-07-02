@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
     """Cycle de vie de l'application : initialisation BDD et modèle au démarrage."""
     env = os.getenv("APP_ENV", "development")
     logger.info(f"TomatoScan API démarrée — environnement : {env}")
-    logger.info(f"Variables d'environnement chargées depuis .env")
+    logger.info("Variables d'environnement chargées depuis .env")
     # Création des tables BDD si elles n'existent pas encore (idempotent)
     Base.metadata.create_all(moteur)
     logger.info("Tables BDD initialisées.")
