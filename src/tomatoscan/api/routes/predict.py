@@ -5,12 +5,19 @@ Après chaque prédiction réussie, l'analyse est sauvegardée en BDD
 pour constituer l'historique de l'utilisateur (Issue #32).
 """
 
+import time
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from loguru import logger
 from PIL import UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from tomatoscan.api.core.security import obtenir_utilisateur_courant
+from tomatoscan.api.metrics import (
+    errors_total,
+    prediction_duration_seconds,
+    predictions_total,
+)
 from tomatoscan.api.schemas.predict import PredictionResponse
 from tomatoscan.api.services import model_service
 from tomatoscan.database.connexion import obtenir_session
@@ -76,6 +83,7 @@ async def predire_maladie(
 
     if content_type not in FORMATS_ACCEPTES and extension not in EXTENSIONS_ACCEPTEES:
         logger.warning(f"Format refusé : {content_type} / {nom}")
+        errors_total.labels(type_erreur="format_invalide").inc()
         raise HTTPException(
             status_code=400,
             detail="Format non supporté. Formats acceptés : jpg, jpeg, png.",
@@ -85,6 +93,7 @@ async def predire_maladie(
     contenu = await fichier.read()
 
     if len(contenu) > TAILLE_MAX_OCTETS:
+        errors_total.labels(type_erreur="fichier_trop_lourd").inc()
         raise HTTPException(
             status_code=400,
             detail="Fichier trop volumineux. Taille max : 5 Mo.",
@@ -92,23 +101,33 @@ async def predire_maladie(
 
     # Vérification que le modèle est disponible
     if not model_service.modele_disponible():
+        errors_total.labels(type_erreur="modele_indisponible").inc()
         raise HTTPException(
             status_code=503,
             detail="Modèle de prédiction indisponible. Réessayez plus tard.",
         )
 
-    # Prédiction
+    # Prédiction — le timer couvre uniquement l'inférence MobileNetV2
+    debut = time.perf_counter()
     try:
         classe, confiance = model_service.predire(contenu)
     except UnidentifiedImageError:
         # PIL ne reconnaît pas le fichier : le contenu est corrompu malgré l'extension correcte
         logger.warning(f"Image corrompue ou format non reconnu : {nom!r}")
+        errors_total.labels(type_erreur="image_corrompue").inc()
         raise HTTPException(
             status_code=400, detail="Image corrompue ou format non reconnu."
         )
     except Exception as erreur:
         logger.error(f"Erreur de prédiction : {erreur}")
+        errors_total.labels(type_erreur="erreur_prediction").inc()
         raise HTTPException(status_code=503, detail="Erreur lors de la prédiction.")
+    finally:
+        # Observé même en cas d'erreur pour mesurer les requêtes lentes ou bloquantes
+        prediction_duration_seconds.observe(time.perf_counter() - debut)
+
+    # Prédiction réussie : compteur par classe et statut
+    predictions_total.labels(classe=classe, statut="succes").inc()
 
     # Message lisible selon la classe détectée
     if "healthy" in classe.lower():

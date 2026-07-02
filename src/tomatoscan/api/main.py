@@ -6,13 +6,13 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
-from slowapi import _rate_limit_exceeded_handler
+from prometheus_client import make_asgi_app
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from tomatoscan.api.core.limiter import limiteur
+from tomatoscan.api.core.limiter import gestionnaire_limite_atteinte, limiteur
 from tomatoscan.api.routes.auth import router as auth_router
 from tomatoscan.api.routes.health import router as health_router
 from tomatoscan.api.routes.history import router as history_router
@@ -121,7 +121,8 @@ app = FastAPI(
 
 # Rate limiter — l'instance doit être dans app.state pour que SlowAPIMiddleware la trouve
 app.state.limiter = limiteur
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Réponse 429 en JSON custom (gestionnaire_limite_atteinte) au lieu du texte brut slowapi
+app.add_exception_handler(RateLimitExceeded, gestionnaire_limite_atteinte)
 
 # Middlewares — ajoutés du plus interne au plus externe (dernier ajouté = premier exécuté)
 app.add_middleware(SlowAPIMiddleware)
@@ -141,3 +142,7 @@ app.include_router(health_router)
 app.include_router(predict_router)
 app.include_router(history_router)
 app.include_router(reports_router)
+
+# Endpoint Prometheus — exposé sur /metrics sans authentification pour le scraping
+# make_asgi_app() génère une app WSGI/ASGI standard compatible avec les agents Prometheus
+app.mount("/metrics", make_asgi_app())
