@@ -18,8 +18,6 @@ services:
       context: .
       dockerfile: Dockerfile.api
     restart: unless-stopped
-    ports:
-      - "8000:8000"
     # Toutes les variables d'environnement chargées depuis .env (jamais de valeurs en dur ici)
     env_file:
       - .env
@@ -27,6 +25,8 @@ services:
       # Modèle MobileNetV2 monté en lecture seule — trop volumineux pour être dans l'image
       # Le fichier .pt est déposé manuellement sur le VPS via un script SSH
       - ./models:/app/models:ro
+    networks:
+      - coolify
     healthcheck:
       # Vérifie que l'API répond sur /health avant de démarrer le frontend
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -41,14 +41,12 @@ services:
       context: .
       dockerfile: Dockerfile.front
     restart: unless-stopped
-    ports:
-      - "8501:8501"
-    env_file:
-      - .env
     # Le frontend démarre uniquement quand l'API est opérationnelle (healthcheck OK)
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      - coolify
 
   # ─── Base de données PostgreSQL 16 (production uniquement) ───────────────────
   postgres:
@@ -59,8 +57,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "5432:5432"
     volumes:
       # Volume nommé pour persister les données entre les redémarrages du conteneur
       - postgres_donnees:/var/lib/postgresql/data
@@ -71,7 +67,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - coolify
 
 volumes:
   # Volume nommé PostgreSQL — survit aux arrêts et suppressions de conteneur
   postgres_donnees:
+
+networks:
+  coolify:
+    external: true
