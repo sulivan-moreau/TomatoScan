@@ -10,7 +10,7 @@ providers:
     type: file
     # Dossier dans lequel Grafana cherche les fichiers JSON de dashboards
     options:
-      path: /var/lib/grafana/dashboards
+      path: /dashboards
     # Empêche la modification des dashboards provisionnés depuis l'interface Grafana
     disableDeletion: false
     updateIntervalSeconds: 30
