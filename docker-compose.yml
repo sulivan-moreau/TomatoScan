@@ -72,21 +72,22 @@ services:
 
   # ─── Prometheus — collecte les métriques exposées sur /metrics ──────────────
   prometheus:
-    image: prom/prometheus:latest
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile.prometheus
     restart: unless-stopped
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       # Rétention des données sur 30 jours — évite une croissance illimitée du volume
       - '--storage.tsdb.retention.time=30d'
-    volumes:
-      # Configuration du scrape — cible l'API sur le réseau coolify
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
       - coolify
 
   # ─── Grafana — visualisation des métriques Prometheus ───────────────────────
   grafana:
-    image: grafana/grafana:latest
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile.grafana
     restart: unless-stopped
     environment:
       # Mot de passe admin Grafana — défini dans .env, jamais en dur ici
@@ -95,10 +96,6 @@ services:
     volumes:
       # Volume persistant pour les dashboards et plugins Grafana
       - grafana_data:/var/lib/grafana
-      # Provisioning automatique : datasources, dashboards, alertes
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
-      # Fichiers JSON des dashboards chargés au démarrage
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
     networks:
