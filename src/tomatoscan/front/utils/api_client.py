@@ -139,26 +139,45 @@ def login(nom_utilisateur: str, mot_de_passe: str) -> str:
     return token
 
 
+def _decoder_payload_token(token: str) -> dict:
+    """Décode la payload d'un JWT sans vérifier la signature.
+
+    La vérification cryptographique est effectuée côté serveur à chaque appel
+    API protégé — ce décodage local sert uniquement à lire des informations
+    d'affichage (expiration, rôle) sans appel réseau.
+    """
+    # La payload JWT est la 2e section (index 1), encodée en base64url
+    partie_payload = token.split(".")[1]
+    # Ajouter le padding manquant pour décoder en base64 standard
+    partie_payload += "=" * (4 - len(partie_payload) % 4)
+    return json.loads(base64.b64decode(partie_payload))
+
+
 def is_token_valid(token: str | None = None) -> bool:
     """Vérifie si un token JWT est présent et non expiré.
 
-    Décode la payload du JWT sans vérifier la signature (la vérification
-    cryptographique est effectuée côté serveur à chaque appel API protégé).
     Retourne False si le token est absent, malformé ou expiré.
     """
     if not token:
         return False
     try:
-        # La payload JWT est la 2e section (index 1), encodée en base64url
-        partie_payload = token.split(".")[1]
-        # Ajouter le padding manquant pour décoder en base64 standard
-        partie_payload += "=" * (4 - len(partie_payload) % 4)
-        payload = json.loads(base64.b64decode(partie_payload))
-        date_expiration = payload.get("exp", 0)
+        date_expiration = _decoder_payload_token(token).get("exp", 0)
         return time.time() < date_expiration
     except Exception:
         # Token malformé → invalide
         return False
+
+
+def obtenir_role(token: str) -> str:
+    """Extrait le rôle ("admin" ou "agriculteur") depuis la payload du JWT.
+
+    Lecture locale non vérifiée, à des fins d'affichage/navigation uniquement —
+    chaque route sensible revérifie le rôle côté serveur.
+    """
+    try:
+        return _decoder_payload_token(token).get("role", "agriculteur")
+    except Exception:
+        return "agriculteur"
 
 
 def predict(octets_image: bytes, nom_fichier: str, token: str) -> dict:
@@ -196,6 +215,76 @@ def predict(octets_image: bytes, nom_fichier: str, token: str) -> dict:
         return reponse.json()
     except ValueError:
         raise ApiError("Réponse de l'API illisible (JSON attendu).")
+
+
+def list_users(token: str) -> list[dict]:
+    """Récupère la liste des utilisateurs via GET /users (admin uniquement).
+
+    Retourne une liste de dict (id, username, role, created_at).
+    Lève ApiError (403 si le compte n'est pas admin) en cas d'erreur HTTP ou réseau.
+    """
+    try:
+        reponse = requests.get(f"{API_URL}/users", headers=_entetes_auth(token), timeout=TIMEOUT)
+    except requests.RequestException:
+        raise ApiError("Impossible de joindre le serveur pour récupérer les utilisateurs.")
+
+    if not reponse.ok:
+        raise ApiError(
+            _extraire_detail(reponse, "Impossible de récupérer les utilisateurs."),
+            status_code=reponse.status_code,
+        )
+
+    try:
+        return reponse.json()
+    except ValueError:
+        raise ApiError("Réponse de l'API illisible (JSON attendu).")
+
+
+def create_user(nom_utilisateur: str, mot_de_passe: str, token: str) -> dict:
+    """Crée un compte agriculteur via POST /users (admin uniquement).
+
+    Lève ApiError (409 si le username est déjà pris) en cas d'erreur HTTP ou réseau.
+    """
+    try:
+        reponse = requests.post(
+            f"{API_URL}/users",
+            headers=_entetes_auth(token),
+            json={"username": nom_utilisateur, "password": mot_de_passe},
+            timeout=TIMEOUT,
+        )
+    except requests.RequestException:
+        raise ApiError("Impossible de joindre le serveur pour créer le compte.")
+
+    if not reponse.ok:
+        raise ApiError(
+            _extraire_detail(reponse, "Échec de la création du compte."),
+            status_code=reponse.status_code,
+        )
+
+    try:
+        return reponse.json()
+    except ValueError:
+        raise ApiError("Réponse de l'API illisible (JSON attendu).")
+
+
+def delete_user(user_id: int, token: str) -> None:
+    """Supprime un compte utilisateur via DELETE /users/{id} (admin uniquement).
+
+    Lève ApiError (400 si auto-suppression, 409 si l'utilisateur a des prédictions)
+    en cas d'erreur HTTP ou réseau.
+    """
+    try:
+        reponse = requests.delete(
+            f"{API_URL}/users/{user_id}", headers=_entetes_auth(token), timeout=TIMEOUT
+        )
+    except requests.RequestException:
+        raise ApiError("Impossible de joindre le serveur pour supprimer le compte.")
+
+    if not reponse.ok:
+        raise ApiError(
+            _extraire_detail(reponse, "Échec de la suppression du compte."),
+            status_code=reponse.status_code,
+        )
 
 
 def get_history(token: str) -> list[dict]:

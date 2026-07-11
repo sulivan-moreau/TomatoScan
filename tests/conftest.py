@@ -18,6 +18,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 # Imports APRÈS les variables d'environnement pour que l'app les lise au démarrage
 from tomatoscan.api.main import app  # noqa: E402
+from tomatoscan.database.bootstrap import bootstrap_admin  # noqa: E402
 from tomatoscan.database.connexion import Base, obtenir_session  # noqa: E402
 
 # Moteur SQLite en mémoire avec StaticPool.
@@ -32,6 +33,13 @@ _moteur_test = create_engine(
 Base.metadata.create_all(_moteur_test)
 
 _SessionTest = sessionmaker(bind=_moteur_test, autocommit=False, autoflush=False)
+
+# Le bootstrap admin tourne normalement dans le lifespan de l'app, jamais déclenché
+# par TestClient(app) sans context manager (voir tests/test_api/test_health.py) — on
+# le rejoue donc ici directement sur la session de test pour que les tests puissent
+# se logger avec ADMIN_USERNAME/ADMIN_PASSWORD comme en conditions réelles.
+with _SessionTest() as _session_bootstrap:
+    bootstrap_admin(_session_bootstrap)
 
 
 def _obtenir_session_test():

@@ -99,3 +99,47 @@ def test_history_apres_prediction(mock_dispo, mock_predire):
     assert isinstance(derniere["confiance"], float)
     assert "created_at" in derniere
     assert "id" in derniere
+
+
+@patch(_PREDIRE, return_value=("Tomato_healthy", 0.99))
+@patch(_DISPONIBLE, return_value=True)
+def test_history_filtree_par_role(mock_dispo, mock_predire):
+    """Un agriculteur ne voit que ses prédictions, un admin voit celles de tous les utilisateurs."""
+    token_admin = _obtenir_token_valide()
+
+    # Création d'un compte agriculteur dédié à ce test (via la route admin)
+    reponse_creation = client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token_admin}"},
+        json={"username": "agriculteur_historique", "password": "motdepasse_agri_456"},
+    )
+    assert reponse_creation.status_code == 201, reponse_creation.text
+
+    reponse_login_agri = client.post(
+        "/auth/token",
+        json={"username": "agriculteur_historique", "password": "motdepasse_agri_456"},
+    )
+    assert reponse_login_agri.status_code == 200
+    token_agri = reponse_login_agri.json()["access_token"]
+
+    # L'agriculteur soumet une prédiction
+    reponse_predict = client.post(
+        "/predict",
+        headers={"Authorization": f"Bearer {token_agri}"},
+        files={"fichier": ("feuille_agri.jpg", _creer_image_jpg(), "image/jpeg")},
+    )
+    assert reponse_predict.status_code == 200
+
+    # L'agriculteur ne voit que sa propre prédiction (compte flambant neuf)
+    historique_agri = client.get(
+        "/predictions/history", headers={"Authorization": f"Bearer {token_agri}"}
+    ).json()
+    assert len(historique_agri) == 1
+    assert historique_agri[0]["nom_fichier"] == "feuille_agri.jpg"
+
+    # L'admin voit l'historique complet, y compris la prédiction de l'agriculteur
+    historique_admin = client.get(
+        "/predictions/history", headers={"Authorization": f"Bearer {token_admin}"}
+    ).json()
+    fichiers_admin = [entree["nom_fichier"] for entree in historique_admin]
+    assert "feuille_agri.jpg" in fichiers_admin
