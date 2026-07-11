@@ -3,7 +3,8 @@
 - Configuration de la page et thème CSS,
 - Sidebar persistante (logo, état API, déconnexion),
 - Vérification de la validité du token JWT à chaque re-run Streamlit,
-- Routing conditionnel : non connecté → login, connecté → Analyse / Historique / Tableau de bord.
+- Routing conditionnel : non connecté → login, connecté → Analyse / Historique
+  (+ Tableau de bord / Créer un membre si role="admin").
 
 Lancement : `streamlit run src/tomatoscan/front/app.py`
 """
@@ -62,15 +63,6 @@ def inject_css():
     )
 
 
-# --- Page placeholder (Tableau de bord — issue dédiée) ----------------------
-
-
-def page_dashboard():
-    """Page Tableau de bord (placeholder)."""
-    st.title("Tableau de bord")
-    st.info("Tableau de bord à venir.")
-
-
 def sidebar_header():
     """Affiche le logo, l'état de l'API et la déconnexion (si connecté)."""
     with st.sidebar:
@@ -114,29 +106,36 @@ def main():
     sidebar_header()
 
     if st.session_state.get("token"):
-        # Utilisateur connecté : navigation complète (Analyse / Historique / Tableau de bord)
-        navigation = st.navigation(
-            {
-                "TomatoScan": [
-                    st.Page(
-                        "pages/predict.py",
-                        title="Analyse",
-                        icon=":material/biotech:",
-                        default=True,
-                    ),
-                    st.Page(
-                        "pages/history.py",
-                        title="Historique",
-                        icon=":material/history:",
-                    ),
-                    st.Page(
-                        page_dashboard,
-                        title="Tableau de bord",
-                        icon=":material/bar_chart:",
-                    ),
-                ]
-            }
-        )
+        # Utilisateur connecté : Analyse et Historique pour tous, pages admin en plus si role="admin"
+        pages = [
+            st.Page(
+                "pages/predict.py",
+                title="Analyse",
+                icon=":material/biotech:",
+                default=True,
+            ),
+            st.Page(
+                "pages/history.py",
+                title="Historique",
+                icon=":material/history:",
+            ),
+        ]
+        if st.session_state.get("role") == "admin":
+            pages.append(
+                st.Page(
+                    "pages/dashboard.py",
+                    title="Tableau de bord",
+                    icon=":material/bar_chart:",
+                )
+            )
+            pages.append(
+                st.Page(
+                    "pages/creer_membre.py",
+                    title="Créer un membre",
+                    icon=":material/person_add:",
+                )
+            )
+        navigation = st.navigation({"TomatoScan": pages})
     else:
         # Non connecté : page de connexion seule, liens de navigation masqués dans la sidebar
         navigation = st.navigation(

@@ -34,15 +34,16 @@ TAILLE_MAX_OCTETS = 5 * 1024 * 1024  # 5 Mo
 def _obtenir_ou_creer_user(nom_utilisateur: str, session: Session) -> int:
     """Retourne l'id de l'utilisateur en BDD, en créant un enregistrement minimal si absent.
 
-    L'authentification étant gérée via .env (pas via la BDD), les utilisateurs
-    peuvent ne pas avoir d'entrée dans `users`. On les crée à la volée pour
-    pouvoir stocker la clé étrangère user_id sur les prédictions.
+    L'authentification est désormais vérifiée contre la table `users` (mot de
+    passe hashé), donc l'utilisateur existe normalement déjà à ce stade. Ce
+    filet de sécurité ne joue que pour un cas limite : un compte supprimé par
+    un admin alors que son token JWT (encore valide jusqu'à expiration)
+    continue d'être utilisé pour une prédiction.
     """
     utilisateur = session.query(User).filter_by(username=nom_utilisateur).first()
     if utilisateur is None:
         utilisateur = User(
             username=nom_utilisateur,
-            # Email fictif unique — l'auth réelle passe par .env, pas par la BDD
             email=f"{nom_utilisateur}@tomatoscan.local",
             hashed_password="",
         )

@@ -49,6 +49,7 @@ def page_connexion() -> None:
                     token = api_client.login(nom_utilisateur, mot_de_passe)
                 st.session_state.token = token
                 st.session_state.username = nom_utilisateur
+                st.session_state.role = api_client.obtenir_role(token)
                 # Redirection vers la navigation principale
                 st.rerun()
             except ApiError as erreur:
