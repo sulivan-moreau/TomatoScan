@@ -224,9 +224,13 @@ def list_users(token: str) -> list[dict]:
     Lève ApiError (403 si le compte n'est pas admin) en cas d'erreur HTTP ou réseau.
     """
     try:
-        reponse = requests.get(f"{API_URL}/users", headers=_entetes_auth(token), timeout=TIMEOUT)
+        reponse = requests.get(
+            f"{API_URL}/users", headers=_entetes_auth(token), timeout=TIMEOUT
+        )
     except requests.RequestException:
-        raise ApiError("Impossible de joindre le serveur pour récupérer les utilisateurs.")
+        raise ApiError(
+            "Impossible de joindre le serveur pour récupérer les utilisateurs."
+        )
 
     if not reponse.ok:
         raise ApiError(

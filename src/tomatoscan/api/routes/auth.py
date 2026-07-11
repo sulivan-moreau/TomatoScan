@@ -64,5 +64,7 @@ def connexion(
         )
 
     token = creer_token_acces({"sub": utilisateur.username, "role": utilisateur.role})
-    logger.info(f"Connexion réussie pour : {utilisateur.username!r} (rôle : {utilisateur.role})")
+    logger.info(
+        f"Connexion réussie pour : {utilisateur.username!r} (rôle : {utilisateur.role})"
+    )
     return TokenResponse(access_token=token, token_type="bearer")

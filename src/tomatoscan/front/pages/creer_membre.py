@@ -24,7 +24,9 @@ st.caption("Crée un nouveau compte agriculteur avec accès à l'application.")
 
 with st.form("creer_membre_form", clear_on_submit=True):
     nom_utilisateur = st.text_input("Nom d'utilisateur", placeholder="agriculteur02")
-    mot_de_passe = st.text_input("Mot de passe", type="password", placeholder="••••••••")
+    mot_de_passe = st.text_input(
+        "Mot de passe", type="password", placeholder="••••••••"
+    )
     soumis = st.form_submit_button("Créer le compte", use_container_width=True)
 
 if soumis:
