@@ -59,7 +59,9 @@ if nb_agriculteurs == 0:
         "utilisateurs via la page **Créer un membre**."
     )
 else:
-    st.markdown(f"**{nb_agriculteurs}** agriculteur(s) actif(s), **{nb_predictions}** prédiction(s) au total.")
+    st.markdown(
+        f"**{nb_agriculteurs}** agriculteur(s) actif(s), **{nb_predictions}** prédiction(s) au total."
+    )
 
 # --- Liste des utilisateurs -----------------------------------------------------
 st.subheader("Utilisateurs")

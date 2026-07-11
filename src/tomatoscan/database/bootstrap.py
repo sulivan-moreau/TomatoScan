@@ -50,4 +50,6 @@ def bootstrap_admin(session: Session) -> None:
         utilisateur.role = "admin"
         utilisateur.hashed_password = hacher_mot_de_passe(mot_de_passe_admin)
         session.commit()
-        logger.info(f"Compte {nom_admin!r} mis à niveau en admin (rôle + mot de passe hashé).")
+        logger.info(
+            f"Compte {nom_admin!r} mis à niveau en admin (rôle + mot de passe hashé)."
+        )

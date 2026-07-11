@@ -9,7 +9,10 @@ from fastapi import APIRouter, Depends
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from tomatoscan.api.core.security import obtenir_role_courant, obtenir_utilisateur_courant
+from tomatoscan.api.core.security import (
+    obtenir_role_courant,
+    obtenir_utilisateur_courant,
+)
 from tomatoscan.api.schemas.history import HistoryItem
 from tomatoscan.database.connexion import obtenir_session
 from tomatoscan.database.modeles import Prediction, User
@@ -34,7 +37,9 @@ def obtenir_historique(
 
         if role != "admin":
             # Recherche de l'utilisateur dans la BDD par son nom
-            utilisateur = session.query(User).filter_by(username=nom_utilisateur).first()
+            utilisateur = (
+                session.query(User).filter_by(username=nom_utilisateur).first()
+            )
             if utilisateur is None:
                 # Aucun enregistrement BDD pour cet utilisateur — liste vide
                 logger.debug(
