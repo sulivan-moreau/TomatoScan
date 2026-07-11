@@ -18,8 +18,10 @@ from tomatoscan.api.routes.health import router as health_router
 from tomatoscan.api.routes.history import router as history_router
 from tomatoscan.api.routes.predict import router as predict_router
 from tomatoscan.api.routes.reports import router as reports_router
+from tomatoscan.api.routes.users import router as users_router
 from tomatoscan.api.services import model_service
-from tomatoscan.database.connexion import Base, moteur
+from tomatoscan.database.bootstrap import bootstrap_admin
+from tomatoscan.database.connexion import Base, SessionLocal, moteur
 
 # Chargement des variables d'environnement depuis .env
 load_dotenv()
@@ -53,6 +55,9 @@ async def lifespan(app: FastAPI):
     # Création des tables BDD si elles n'existent pas encore (idempotent)
     Base.metadata.create_all(moteur)
     logger.info("Tables BDD initialisées.")
+    # Garantit qu'un compte admin (role="admin", mot de passe hashé) existe en BDD
+    with SessionLocal() as session:
+        bootstrap_admin(session)
     # Chargement unique du modèle au démarrage
     model_service.initialiser_modele()
     yield
@@ -101,6 +106,11 @@ _TAGS_METADATA = [
         "Lit un fichier CSV dont le chemin est configuré dans `.env`. "
         "**JWT Bearer requis.**",
     },
+    {
+        "name": "Utilisateurs",
+        "description": "Gestion des comptes agriculteur (liste, création, suppression). "
+        "**Réservé aux administrateurs.**",
+    },
 ]
 
 app = FastAPI(
@@ -142,6 +152,7 @@ app.include_router(health_router)
 app.include_router(predict_router)
 app.include_router(history_router)
 app.include_router(reports_router)
+app.include_router(users_router)
 
 # Endpoint Prometheus — exposé sur /metrics sans authentification pour le scraping
 # make_asgi_app() génère une app WSGI/ASGI standard compatible avec les agents Prometheus
