@@ -11,7 +11,6 @@ Lancement : `streamlit run src/tomatoscan/front/app.py`
 
 import streamlit as st
 
-from pages.login import page_connexion
 from utils import api_client
 
 # Palette TomatoScan (réutilisée dans le CSS).
@@ -35,9 +34,16 @@ def inject_css():
         /* Fond général */
         .stApp {{ background: #f6f8f6; }}
 
-        /* Sidebar vert profond */
+        /* Sidebar vert profond — texte clair limité aux éléments de texte réels
+           (paragraphes, légendes, libellés, conteneurs markdown) plutôt qu'un
+           sélecteur universel qui déborderait sur tout élément (icônes, bordures,
+           états focus...) sans qu'on le voie dans ce fichier */
         section[data-testid="stSidebar"] {{ background: {VERT_FONCE}; }}
-        section[data-testid="stSidebar"] * {{ color: #e8f1ea; }}
+        section[data-testid="stSidebar"] p,
+        section[data-testid="stSidebar"] span,
+        section[data-testid="stSidebar"] small,
+        section[data-testid="stSidebar"] label,
+        section[data-testid="stSidebar"] .stMarkdown {{ color: #e8f1ea; }}
         .ts-logo {{
             display: flex; align-items: center; gap: 10px;
             font-size: 20px; font-weight: 700; color: #ffffff;
@@ -106,8 +112,13 @@ def main():
     sidebar_header()
 
     if st.session_state.get("token"):
-        # Utilisateur connecté : Analyse et Historique pour tous, pages admin en plus si role="admin"
+        # Utilisateur connecté : Accueil/Analyse/Historique pour tous, pages admin en plus si role="admin"
         pages = [
+            st.Page(
+                "pages/accueil.py",
+                title="Accueil",
+                icon=":material/home:",
+            ),
             st.Page(
                 "pages/predict.py",
                 title="Analyse",
@@ -137,9 +148,13 @@ def main():
             )
         navigation = st.navigation({"TomatoScan": pages})
     else:
-        # Non connecté : page de connexion seule, liens de navigation masqués dans la sidebar
+        # Non connecté : Accueil (avec lien vers connexion) + page de connexion,
+        # liens de navigation masqués dans la sidebar (position="hidden")
         navigation = st.navigation(
-            [st.Page(page_connexion, title="Connexion")],
+            [
+                st.Page("pages/accueil.py", title="Accueil", icon=":material/home:"),
+                st.Page("pages/login.py", title="Connexion", icon=":material/login:"),
+            ],
             position="hidden",
         )
 

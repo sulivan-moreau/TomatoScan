@@ -26,6 +26,15 @@ if st.session_state.get("role") != "admin":
 st.title("Tableau de bord")
 st.caption("Vue d'ensemble des comptes et accès au monitoring.")
 
+# Lien vers l'historique détaillé — cette page (admin uniquement) montre les
+# métriques agrégées ; l'historique complet (liste des prédictions) est sur
+# pages/history.py, qui affiche déjà tout pour un admin (filtrage par rôle côté API)
+st.page_link(
+    "pages/history.py",
+    label="Voir l'historique détaillé des prédictions",
+    icon=":material/history:",
+)
+
 # --- Lien vers Grafana --------------------------------------------------------
 grafana_url = os.getenv("GRAFANA_URL", "")
 if grafana_url:

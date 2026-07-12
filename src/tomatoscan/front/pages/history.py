@@ -19,6 +19,14 @@ if not token:
 st.title("Historique des analyses")
 st.caption("Retrouvez toutes vos analyses de feuilles de tomate.")
 
+# Lien vers les métriques globales — réservé admin, même test de rôle que app.py:123
+if st.session_state.get("role") == "admin":
+    st.page_link(
+        "pages/dashboard.py",
+        label="Voir les métriques globales (tous utilisateurs) dans le Tableau de bord",
+        icon=":material/bar_chart:",
+    )
+
 try:
     with st.spinner("Chargement de l'historique…"):
         entrees = api_client.get_history(token)

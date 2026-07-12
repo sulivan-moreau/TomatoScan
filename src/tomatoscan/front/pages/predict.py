@@ -8,7 +8,8 @@ Parcours :
    rouge avec le nom de la maladie traduit, plus le score de confiance.
 
 Commentaires en français. Contrastes conformes WCAG AA (texte blanc sur
-fonds #2d6a4f et #c1121f : ratios respectivement ≈ 5.6:1 et ≈ 6.5:1).
+fonds #2d6a4f et #c1121f : ratios respectivement 6.39:1 et 6.22:1 — calculés
+précisément par formule de luminance relative WCAG, voir docs/audit_frontend_existant.md).
 """
 
 import streamlit as st
