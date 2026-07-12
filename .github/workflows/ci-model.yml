@@ -1,0 +1,99 @@
+# Workflow CI Modèle — prouve que la chaîne data → preprocessing → entraînement →
+# évaluation → rapport s'exécute sans erreur technique (issue #22, compétence C13,
+# critère "les étapes de test, d'entraînement et de validation du modèle sont
+# intégrées à la chaîne et s'exécutent sans erreur").
+#
+# Ne produit PAS un modèle utilisable et ne vérifie AUCUN seuil de performance :
+# entraînement très court (2 epochs) sur un mini-dataset de 32 images réelles
+# (4 classes Tomato, 8 images chacune, extraites du dataset local puis committées
+# dans tests/fixtures/mini_dataset/). Le vrai dataset PlantVillage (~2 Go, absent
+# du dépôt) n'est jamais utilisé ici. MLflow n'est pas utilisé sur ce projet — le
+# rapport est un JSON, comme partout ailleurs dans TomatoScan.
+#
+# GitHub Actions n'a pas de GPU : torch/torchvision sont installés depuis l'index
+# CPU-only AVANT uv sync, exactement comme le fait déjà Dockerfile.api, pour éviter
+# de télécharger ~1,5 Go de dépendances CUDA/NVIDIA inutiles sur un runner sans GPU.
+
+name: CI — Pipeline modèle (entraînement + évaluation)
+
+on:
+  push:
+    branches:
+      - "feature/model-*"
+  workflow_dispatch:
+
+env:
+  # Chemins et hyperparamètres CI — aucune valeur sensible, aucun secret nécessaire
+  # pour ce job (contrairement à ci-app.yml, il ne démarre ni API ni base de données)
+  CI_DATASET_PATH: tests/fixtures/mini_dataset
+  CI_MODEL_DIR: ci_artifacts/models
+  CI_REPORT_DIR: ci_artifacts/reports
+  CI_EPOCHS: 2
+  CI_BATCH_SIZE: 4
+
+jobs:
+  train-and-evaluate:
+    name: Entraînement + évaluation (mini-dataset)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # Étape 1 — Récupération du code source (inclut tests/fixtures/mini_dataset/)
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      # Étape 2 — Installation de Python 3.11 (version cible du projet)
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Étape 3 — Installation de uv
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      # Étape 4 — torch/torchvision CPU-only AVANT uv sync, comme Dockerfile.api :
+      # uv sync trouve ensuite torch déjà satisfait et ne réinstalle pas la variante
+      # CUDA (uv.lock résout sinon des paquets nvidia-* de plusieurs centaines de Mo
+      # chacun sur Linux, inutiles ici et hors budget de temps de ce workflow)
+      - name: Installation torch CPU uniquement (évite les wheels CUDA/NVIDIA)
+        run: |
+          uv venv
+          uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+      # Étape 5 — Installation du reste des dépendances (dont dev : pytest, ruff)
+      - name: Installation des dépendances
+        run: uv sync --extra dev
+
+      # Étape 6 — Tests de préparation des données (issue #19).
+      # Ces tests génèrent leurs propres images factices via la fixture tmp_path
+      # (tests/test_model/conftest.py) — ils ne lisent pas CI_DATASET_PATH, mais
+      # valident la même logique de préparation des données (obtenir_classes_tomates,
+      # transforms, mapping des labels, fichier corrompu) que celle exercée juste
+      # après sur le mini-dataset réel.
+      - name: Tests de préparation des données
+        run: uv run pytest tests/test_model/test_donnees.py tests/test_model/test_preprocessing.py -v
+
+      # Étape 7 — Entraînement + évaluation RÉELS (pas de mock) sur le mini-dataset.
+      # Utilise entrainer_modele()/charger_checkpoint()/executer_inference()/
+      # generer_rapport() de train.py/evaluate.py tels quels, via scripts/
+      # ci_entrainement_evaluation.py — aucun seuil d'accuracy vérifié, seul le bon
+      # déroulement technique du pipeline compte pour ce critère C13.
+      - name: Entraînement + évaluation sur le mini-dataset
+        run: uv run python scripts/ci_entrainement_evaluation.py
+
+      # Étape 8 — Publication du checkpoint entraîné + du rapport JSON comme artifact,
+      # accessible depuis l'onglet "Summary" du run (et donc depuis la PR). if: always()
+      # pour publier ce qui a pu être produit même en cas d'échec d'une étape.
+      - name: Publication des artifacts (checkpoint + rapport)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-model-pipeline-${{ github.run_id }}
+          path: |
+            ci_artifacts/models/
+            ci_artifacts/reports/
+          retention-days: 14
+          if-no-files-found: warn

@@ -82,7 +82,7 @@ jobs:
       - name: Format check (ruff)
         run: uv run ruff format --check src/
 
-      # Étape 7 — Exécution des 25 tests API avec rapport de couverture
+      # Étape 7 — Exécution de la suite complète (API + modèle + frontend + BDD) avec couverture
       # Cible : couverture > 80% sur src/tomatoscan/api/
       - name: Tests (pytest + couverture)
-        run: uv run pytest tests/test_api/ -v --cov=src/tomatoscan/api --cov-report=term-missing
+        run: uv run pytest tests/ -v --cov=src/tomatoscan/api --cov-report=term-missing
