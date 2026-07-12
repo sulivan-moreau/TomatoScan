@@ -1,0 +1,163 @@
+# Workflow CD Modèle — dépose un nouveau checkpoint .pt sur le VPS de préprod et
+# redémarre le conteneur API pour qu'il le charge (issue #23, compétence C13,
+# option A : packaging/déploiement du modèle).
+#
+# Le modèle reste en volume Docker (./models:/app/models:ro dans docker-compose.yml),
+# jamais packagé dans l'image — cohérent avec l'architecture existante. Ne remplace
+# pas l'entraînement/l'évaluation (voir ci-model.yml, issue #22) : ce workflow ne fait
+# que transporter un checkpoint déjà entraîné vers le VPS. Pas de MLflow.
+#
+# Déclenché sur push vers develop quand un .pt change dans models/, ET manuellement
+# (workflow_dispatch) avec un mode dry-run par défaut — voir le rapport de fin de
+# tâche pour la raison : models/ est actuellement dans .gitignore, donc ce
+# déclencheur ne se déclenchera pas tant qu'un .pt n'est pas ajouté au dépôt avec
+# `git add -f` (ou que .gitignore soit changé — décision volontairement laissée à
+# l'humain, pas prise ici).
+
+name: CD — Déploiement modèle (préprod)
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "models/**.pt"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: >-
+          Dry-run : teste la connexion SSH et affiche ce qui serait fait,
+          sans copier le fichier ni redémarrer le conteneur. Décoche pour un déploiement réel.
+        type: boolean
+        default: true
+
+jobs:
+  deploy-model:
+    name: Déploiement du modèle sur le VPS préprod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # true uniquement si déclenché manuellement avec dry_run coché — un push sur
+      # develop est TOUJOURS un déploiement réel (pas d'input dry_run disponible
+      # pour un événement push)
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+
+    steps:
+      # Étape 1 — Récupération du code source
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      # Étape 2 — Vérifie que le fichier .pt attendu existe bien, avec le nom
+      # attendu (convention mobilenetv2_best_<horodatage>.pt, voir train.py).
+      # Échoue explicitement (exit 1 + message clair) si absent, jamais silencieux.
+      - name: Vérifier la présence du modèle attendu
+        id: verifier_modele
+        run: |
+          set -euo pipefail
+          CHEMIN_PT=$(ls -t models/mobilenetv2_best_*.pt 2>/dev/null | head -1 || true)
+          if [ -z "$CHEMIN_PT" ]; then
+            echo "::error::Aucun fichier models/mobilenetv2_best_*.pt trouvé dans ce commit. Déploiement annulé."
+            exit 1
+          fi
+          echo "Modèle détecté : $CHEMIN_PT"
+          echo "chemin_pt=$CHEMIN_PT" >> "$GITHUB_OUTPUT"
+          echo "nom_fichier=$(basename "$CHEMIN_PT")" >> "$GITHUB_OUTPUT"
+          echo "taille=$(du -h "$CHEMIN_PT" | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      # Étape 3 — Accès SSH au VPS via clé privée en secret (jamais loguée en clair :
+      # webfactory/ssh-agent charge la clé dans l'agent SSH sans jamais l'afficher).
+      - name: Configurer l'accès SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+
+      - name: Ajouter le VPS aux known_hosts
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      # Test de connectivité — s'exécute toujours (dry-run compris) pour valider les
+      # secrets/la connexion avant toute action. Échoue proprement (set -e + exit non
+      # nul de ssh) si la connexion échoue, sans continuer silencieusement.
+      - name: Tester la connexion SSH
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            'echo "Connexion SSH OK sur $(hostname)"'
+
+      # Étape 4 — Copie du .pt vers le volume models/ du VPS, PUIS met à jour un lien
+      # symbolique stable (mobilenetv2_current.pt) vers ce fichier. Nécessaire car
+      # MODEL_PATH (.env préprod) pointe vers un nom de fichier horodaté fixe
+      # (ex. mobilenetv2_best_20260624_161841.pt, voir .env.example) — sans ce lien,
+      # copier un nouveau .pt ne suffit pas à le faire charger par l'API après
+      # redémarrage. Voir "Action manuelle requise" dans le rapport de fin de tâche.
+      - name: Copier le modèle sur le VPS
+        if: env.DRY_RUN != 'true'
+        run: |
+          set -euo pipefail
+          scp -o StrictHostKeyChecking=yes \
+            "${{ steps.verifier_modele.outputs.chemin_pt }}" \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ vars.VPS_MODELS_PATH }}/"
+          ssh -o StrictHostKeyChecking=yes "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "
+            set -e
+            ln -sf '${{ vars.VPS_MODELS_PATH }}/${{ steps.verifier_modele.outputs.nom_fichier }}' \
+                   '${{ vars.VPS_MODELS_PATH }}/mobilenetv2_current.pt'
+          "
+
+      - name: (dry-run) Ce qui serait copié
+        if: env.DRY_RUN == 'true'
+        run: |
+          echo "DRY-RUN — aucune copie effectuée."
+          echo "Aurait copié : ${{ steps.verifier_modele.outputs.chemin_pt }}"
+          echo "Vers : ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ vars.VPS_MODELS_PATH }}/"
+
+      # Étape 5 — Redémarre le conteneur API. Nom trouvé dynamiquement (change à
+      # chaque redéploiement Coolify) plutôt qu'un nom fixe. Échoue explicitement
+      # si aucun conteneur ne correspond au filtre, plutôt que de continuer sans rien
+      # redémarrer.
+      - name: Redémarrer le conteneur API
+        if: env.DRY_RUN != 'true'
+        id: redemarrage
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" "
+            set -e
+            CONTENEUR=\$(docker ps --filter 'name=api-${{ vars.VPS_COOLIFY_APP_ID }}' --format '{{.Names}}' | head -1)
+            if [ -z \"\$CONTENEUR\" ]; then
+              echo 'Aucun conteneur API trouvé (filtre: api-${{ vars.VPS_COOLIFY_APP_ID }})' >&2
+              exit 1
+            fi
+            echo \"Conteneur trouvé : \$CONTENEUR\"
+            docker restart \"\$CONTENEUR\"
+          "
+
+      - name: (dry-run) Conteneur qui serait redémarré
+        if: env.DRY_RUN == 'true'
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "docker ps --filter 'name=api-${{ vars.VPS_COOLIFY_APP_ID }}' --format '{{.Names}} ({{.Status}})'"
+          echo "DRY-RUN — aucun redémarrage effectué."
+
+      # Étape 6 — Résumé visible dans l'onglet Summary du run (et donc depuis la PR).
+      # if: always() pour produire un résumé même si une étape précédente a échoué.
+      - name: Résumé du déploiement
+        if: always()
+        run: |
+          {
+            echo "## Résumé du déploiement modèle"
+            echo ""
+            echo "| Élément | Valeur |"
+            echo "|---|---|"
+            echo "| Mode | ${{ env.DRY_RUN == 'true' && '🔵 DRY-RUN (aucune action réelle)' || '🔴 Déploiement réel' }} |"
+            echo "| Fichier | \`${{ steps.verifier_modele.outputs.nom_fichier || 'non déterminé' }}\` |"
+            echo "| Taille | ${{ steps.verifier_modele.outputs.taille || 'n/a' }} |"
+            echo "| Déclenché par | ${{ github.event_name }} (${{ github.actor }}) |"
+            echo "| Horodatage (UTC) | $(date -u +'%Y-%m-%dT%H:%M:%SZ') |"
+            echo "| Résultat job (jusqu'ici) | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
