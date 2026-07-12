@@ -32,4 +32,9 @@ mlflow.db
 # OS
 .DS_Store
 Thumbs.db
-EOF
+
+# Tests locaux uniquement — ne pas versionner
+docker-compose.local.yml
+
+# Couverture de tests
+.coverage
