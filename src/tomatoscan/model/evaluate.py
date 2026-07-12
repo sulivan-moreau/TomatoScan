@@ -83,7 +83,9 @@ def afficher_confusion_matrix(
     # une classe n'apparaît ni dans labels_reels ni dans predictions pour ce batch —
     # sans ça, la matrice se réduit aux classes réellement présentes et désynchronise
     # les axes (IndexError plus loin, car noms_classes garde toujours sa taille complète)
-    matrice = confusion_matrix(labels_reels, predictions, labels=range(len(noms_classes)))
+    matrice = confusion_matrix(
+        labels_reels, predictions, labels=range(len(noms_classes))
+    )
 
     # Normalisation pour afficher des proportions plutôt que des comptages bruts.
     # np.divide(..., where=...) évite la division par zéro sur une ligne à somme
