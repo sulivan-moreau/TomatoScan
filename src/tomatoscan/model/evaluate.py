@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from loguru import logger
 from sklearn.metrics import classification_report, confusion_matrix
@@ -78,10 +79,25 @@ def afficher_confusion_matrix(
     noms_classes: list,
 ):
     """Affiche la confusion matrix normalisée avec matplotlib."""
-    matrice = confusion_matrix(labels_reels, predictions)
+    # labels=range(...) force une matrice de taille fixe (len(noms_classes)) même si
+    # une classe n'apparaît ni dans labels_reels ni dans predictions pour ce batch —
+    # sans ça, la matrice se réduit aux classes réellement présentes et désynchronise
+    # les axes (IndexError plus loin, car noms_classes garde toujours sa taille complète)
+    matrice = confusion_matrix(
+        labels_reels, predictions, labels=range(len(noms_classes))
+    )
 
-    # Normalisation pour afficher des proportions plutôt que des comptages bruts
-    matrice_normalisee = matrice.astype(float) / matrice.sum(axis=1, keepdims=True)
+    # Normalisation pour afficher des proportions plutôt que des comptages bruts.
+    # np.divide(..., where=...) évite la division par zéro sur une ligne à somme
+    # nulle (classe absente de labels_reels pour ce batch) — ces lignes restent à 0
+    # plutôt que de produire un RuntimeWarning et des NaN.
+    sommes_lignes = matrice.sum(axis=1, keepdims=True)
+    matrice_normalisee = np.divide(
+        matrice.astype(float),
+        sommes_lignes,
+        out=np.zeros_like(matrice, dtype=float),
+        where=sommes_lignes != 0,
+    )
 
     fig, ax = plt.subplots(figsize=(12, 10))
     image_matrice = ax.imshow(
@@ -131,9 +147,13 @@ def generer_rapport(
     """
     os.makedirs(dossier_rapport, exist_ok=True)
 
+    # labels=range(...) évite un ValueError si une classe n'apparaît ni dans
+    # labels_reels ni dans predictions pour ce batch (le nombre de classes déduit
+    # des données ne correspondrait alors plus à len(target_names))
     rapport_classification = classification_report(
         labels_reels,
         predictions,
+        labels=range(len(noms_classes)),
         target_names=noms_classes,
         output_dict=True,
     )
