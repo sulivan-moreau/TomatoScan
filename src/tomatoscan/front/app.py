@@ -70,17 +70,12 @@ def inject_css():
 
 
 def sidebar_header():
-    """Affiche le logo, l'état de l'API et la déconnexion (si connecté)."""
+    """Affiche le logo et la déconnexion (si connecté)."""
     with st.sidebar:
         st.markdown(
             '<div class="ts-logo"><span class="ts-dot"></span>TomatoScan</div>',
             unsafe_allow_html=True,
         )
-        # Indicateur d'état de l'API (utilise api_client.ping).
-        if api_client.ping():
-            st.caption("🟢 API connectée")
-        else:
-            st.caption("🔴 API injoignable")
 
         if st.session_state.get("token"):
             # Affiche le nom de l'utilisateur connecté

@@ -3,6 +3,11 @@
 Réservée aux administrateurs : liste des utilisateurs, résumé (nombre
 d'agriculteurs, nombre de prédictions), suppression de compte, et accès
 direct à Grafana.
+
+Refonte visuelle (issue #33 suite) : les 2 chiffres clés (agriculteurs,
+prédictions) mis en avant via des st.container(key=...) colorés façon
+"metric card" — mêmes variables nb_agriculteurs/nb_predictions qu'avant,
+logique d'appel API/rôle/suppression inchangée, voir docs/brief_design.md.
 """
 
 import os
@@ -38,7 +43,9 @@ st.page_link(
 # --- Lien vers Grafana --------------------------------------------------------
 grafana_url = os.getenv("GRAFANA_URL", "")
 if grafana_url:
-    st.link_button("Ouvrir le monitoring", grafana_url)
+    st.link_button(
+        "Ouvrir le monitoring", grafana_url, icon=":material/open_in_new:"
+    )
 else:
     st.caption("GRAFANA_URL non configurée dans l'environnement — lien indisponible.")
 
@@ -62,15 +69,32 @@ nb_predictions = len(toutes_predictions)
 
 # --- Résumé --------------------------------------------------------------------
 st.subheader("Résumé")
+
+colonne_a, colonne_b = st.columns(2)
+with colonne_a:
+    with st.container(key="metric_farmers"):
+        st.caption("Agriculteurs")
+        st.markdown(f"### {nb_agriculteurs}")
+with colonne_b:
+    with st.container(key="metric_predictions"):
+        st.caption("Prédictions totales")
+        st.markdown(f"### {nb_predictions}")
+
 if nb_agriculteurs == 0:
     st.info(
         "Aucun agriculteur inscrit pour le moment — invite tes premiers "
         "utilisateurs via la page **Créer un membre**."
     )
-else:
-    st.markdown(
-        f"**{nb_agriculteurs}** agriculteur(s) actif(s), **{nb_predictions}** prédiction(s) au total."
-    )
+
+st.markdown(
+    """<style>
+    .st-key-metric_farmers { background:#2d6a4f; border-radius:12px; padding:1.1rem 1.4rem; }
+    .st-key-metric_farmers p, .st-key-metric_farmers h3 { color:#ffffff !important; }
+    .st-key-metric_predictions { background:#1b4332; border-radius:12px; padding:1.1rem 1.4rem; }
+    .st-key-metric_predictions p, .st-key-metric_predictions h3 { color:#ffffff !important; }
+    </style>""",
+    unsafe_allow_html=True,
+)
 
 # --- Liste des utilisateurs -----------------------------------------------------
 st.subheader("Utilisateurs")
@@ -95,7 +119,9 @@ else:
 
         cle_confirmation = f"confirmer_suppression_{u['id']}"
 
-        if colonne_bouton.button("Supprimer", key=f"supprimer_{u['id']}"):
+        if colonne_bouton.button(
+            "Supprimer", icon=":material/delete:", key=f"supprimer_{u['id']}"
+        ):
             st.session_state[cle_confirmation] = True
 
         if st.session_state.get(cle_confirmation):
