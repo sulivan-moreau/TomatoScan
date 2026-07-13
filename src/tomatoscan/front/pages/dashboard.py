@@ -43,9 +43,7 @@ st.page_link(
 # --- Lien vers Grafana --------------------------------------------------------
 grafana_url = os.getenv("GRAFANA_URL", "")
 if grafana_url:
-    st.link_button(
-        "Ouvrir le monitoring", grafana_url, icon=":material/open_in_new:"
-    )
+    st.link_button("Ouvrir le monitoring", grafana_url, icon=":material/open_in_new:")
 else:
     st.caption("GRAFANA_URL non configurée dans l'environnement — lien indisponible.")
 

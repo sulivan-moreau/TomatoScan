@@ -80,7 +80,9 @@ colonne_image, colonne_resultat = st.columns(2, gap="large")
 # --- Colonne gauche : upload + aperçu + bouton ------------------------------
 with colonne_image:
     with st.container(key="upload_zone"):
-        st.markdown("##### :material/add_photo_alternate: Glissez-déposez une photo de feuille")
+        st.markdown(
+            "##### :material/add_photo_alternate: Glissez-déposez une photo de feuille"
+        )
         st.caption("ou cliquez pour parcourir · JPG, JPEG, PNG")
         fichier = st.file_uploader(
             "Image de la feuille (formats acceptés : JPG, JPEG, PNG)",
