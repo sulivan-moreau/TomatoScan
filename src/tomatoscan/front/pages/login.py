@@ -2,6 +2,18 @@
 
 Gère le formulaire de connexion, l'appel POST /auth/token,
 et le stockage du token JWT en session Streamlit.
+
+Enregistrée par chemin de fichier (comme toutes les autres pages) plutôt que
+par fonction, pour que st.page_link() puisse y pointer depuis pages/accueil.py —
+la logique du formulaire elle-même est inchangée, seule la structure (fonction
+→ script de niveau module) a changé.
+
+Refonte visuelle (issue #33 suite) : formulaire dans une carte
+st.container(key="login_card") stylée en CSS scoped — logique d'auth
+inchangée, voir docs/brief_design.md. Le logo garde l'emoji 🍅 (identité
+de marque) plutôt que l'icône proposée en maquette : Material Symbols n'a
+pas d'équivalent "tomate", et le favicon/logo utilisent déjà cet emoji
+ailleurs dans le projet.
 """
 
 import streamlit as st
@@ -9,23 +21,12 @@ import streamlit as st
 from utils import api_client
 from utils.api_client import ApiError
 
-
-def page_connexion() -> None:
-    """Affiche le formulaire de connexion et gère l'authentification JWT.
-
-    En cas de succès, stocke le token et le nom d'utilisateur en session
-    puis redirige vers la navigation principale via st.rerun().
-    En cas d'échec (401, réseau), affiche un message d'erreur lisible.
-    """
-    _, centre, _ = st.columns([1, 1.1, 1])
-    with centre:
+_, centre, _ = st.columns([1, 1.1, 1])
+with centre:
+    with st.container(key="login_card"):
         st.markdown("### 🍅 TomatoScan")
         st.title("Connexion")
         st.caption("Accédez à votre espace d'analyse des maladies de la tomate.")
-
-        # Message affiché uniquement si la session a expiré (flag posé par main())
-        if st.session_state.pop("session_expiree", False):
-            st.warning("Session expirée, veuillez vous reconnecter.")
 
         with st.form("login_form"):
             nom_utilisateur = st.text_input(
@@ -34,7 +35,9 @@ def page_connexion() -> None:
             mot_de_passe = st.text_input(
                 "Mot de passe", type="password", placeholder="••••••••"
             )
-            soumis = st.form_submit_button("Se connecter", use_container_width=True)
+            soumis = st.form_submit_button(
+                "Se connecter", icon=":material/login:", use_container_width=True
+            )
 
         if soumis:
             # Validation basique des champs vides avant d'appeler l'API
@@ -42,17 +45,26 @@ def page_connexion() -> None:
                 st.error(
                     "Veuillez renseigner votre nom d'utilisateur et votre mot de passe."
                 )
-                return
-            try:
-                # Spinner pendant l'appel réseau pour indiquer la progression
-                with st.spinner("Connexion en cours…"):
-                    token = api_client.login(nom_utilisateur, mot_de_passe)
-                st.session_state.token = token
-                st.session_state.username = nom_utilisateur
-                st.session_state.role = api_client.obtenir_role(token)
-                # Redirection vers la navigation principale
-                st.rerun()
-            except ApiError as erreur:
-                st.error(str(erreur))
+            else:
+                try:
+                    # Spinner pendant l'appel réseau pour indiquer la progression
+                    with st.spinner("Connexion en cours…"):
+                        token = api_client.login(nom_utilisateur, mot_de_passe)
+                    st.session_state.token = token
+                    st.session_state.username = nom_utilisateur
+                    st.session_state.role = api_client.obtenir_role(token)
+                    # Redirection vers la navigation principale
+                    st.rerun()
+                except ApiError as erreur:
+                    st.error(str(erreur))
 
         st.caption("Mot de passe oublié ? Contactez votre administrateur.")
+
+st.markdown(
+    """<style>
+    .st-key-login_card { background:#ffffff; border:1px solid #e8f1ea; border-radius:16px; padding:2.2rem 2.1rem; }
+    .st-key-login_card button[kind="formSubmit"] { background:#2d6a4f; color:#ffffff; border:none; }
+    .st-key-login_card button[kind="formSubmit"]:hover { background:#1b4332; }
+    </style>""",
+    unsafe_allow_html=True,
+)
