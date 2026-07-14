@@ -4,9 +4,10 @@ Modèles SQLAlchemy pour TomatoScan.
   - Prediction : historique des prédictions de maladies sur les images
 """
 
+import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Uuid
 from sqlalchemy.orm import relationship
 
 from tomatoscan.database.connexion import Base
@@ -22,7 +23,10 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    # Uuid (SQLAlchemy 2.0) est portable entre dialectes : type natif UUID sur
+    # PostgreSQL, stocké en CHAR(32) sur SQLite (dev/préprod) — le code
+    # applicatif manipule toujours un uuid.UUID Python, quel que soit le moteur.
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     username = Column(String, unique=True, nullable=False, index=True)
     email = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
@@ -39,8 +43,12 @@ class Prediction(Base):
 
     __tablename__ = "predictions"
 
+    # id reste un entier auto-incrémenté : jamais exposé ni utilisé comme
+    # paramètre de route (aucune route GET/DELETE /predictions/{id}), donc
+    # hors du périmètre de cette migration — seul user_id doit suivre le
+    # type de users.id pour que la relation FK reste valide.
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Uuid, ForeignKey("users.id"), nullable=False)
     nom_fichier = Column(String, nullable=False)
     classe_predite = Column(String, nullable=False)
     confiance = Column(Float, nullable=False)

@@ -10,6 +10,7 @@ Vérifie :
 
 import io
 import os
+import uuid
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -40,7 +41,9 @@ def _token_admin() -> str:
     reponse = client.post(
         "/auth/token", json={"username": NOM_ADMIN, "password": MOT_DE_PASSE_ADMIN}
     )
-    assert reponse.status_code == 200, f"Échec d'authentification admin : {reponse.text}"
+    assert reponse.status_code == 200, (
+        f"Échec d'authentification admin : {reponse.text}"
+    )
     return reponse.json()["access_token"]
 
 
@@ -59,8 +62,12 @@ def _creer_agriculteur(
 
 def _token_agriculteur(username: str, password: str = "motdepasse_agri_123") -> str:
     """Authentifie un compte agriculteur et retourne son token JWT."""
-    reponse = client.post("/auth/token", json={"username": username, "password": password})
-    assert reponse.status_code == 200, f"Échec d'authentification agriculteur : {reponse.text}"
+    reponse = client.post(
+        "/auth/token", json={"username": username, "password": password}
+    )
+    assert reponse.status_code == 200, (
+        f"Échec d'authentification agriculteur : {reponse.text}"
+    )
     return reponse.json()["access_token"]
 
 
@@ -76,7 +83,9 @@ def test_agriculteur_recoit_403_sur_toutes_les_routes_users():
         "/users", headers=entetes, json={"username": "x", "password": "y"}
     )
     assert reponse_post.status_code == 403
-    assert client.delete("/users/1", headers=entetes).status_code == 403
+    # UUID syntaxiquement valide mais inexistant : le rôle est vérifié avant toute
+    # recherche en BDD, donc peu importe qu'il corresponde à un compte réel.
+    assert client.delete(f"/users/{uuid.uuid4()}", headers=entetes).status_code == 403
 
 
 def test_admin_peut_lister_creer_et_supprimer_des_utilisateurs():
@@ -98,7 +107,9 @@ def test_admin_peut_lister_creer_et_supprimer_des_utilisateurs():
     assert reponse_suppression.status_code == 204
 
     # L'utilisateur supprimé ne doit plus apparaître dans la liste
-    usernames_apres = [u["username"] for u in client.get("/users", headers=entetes).json()]
+    usernames_apres = [
+        u["username"] for u in client.get("/users", headers=entetes).json()
+    ]
     assert "agriculteur_cycle_complet" not in usernames_apres
 
 
@@ -121,7 +132,9 @@ def test_admin_ne_peut_pas_se_supprimer_lui_meme():
     entetes = {"Authorization": f"Bearer {token_admin}"}
 
     mon_id = next(
-        u["id"] for u in client.get("/users", headers=entetes).json() if u["username"] == NOM_ADMIN
+        u["id"]
+        for u in client.get("/users", headers=entetes).json()
+        if u["username"] == NOM_ADMIN
     )
 
     reponse = client.delete(f"/users/{mon_id}", headers=entetes)
@@ -141,7 +154,13 @@ def test_suppression_bloquee_si_utilisateur_a_des_predictions(mock_dispo, mock_p
     reponse_predict = client.post(
         "/predict",
         headers={"Authorization": f"Bearer {token_agri}"},
-        files={"fichier": ("feuille_avant_suppression.jpg", _creer_image_jpg(), "image/jpeg")},
+        files={
+            "fichier": (
+                "feuille_avant_suppression.jpg",
+                _creer_image_jpg(),
+                "image/jpeg",
+            )
+        },
     )
     assert reponse_predict.status_code == 200, reponse_predict.text
 
@@ -154,5 +173,7 @@ def test_suppression_bloquee_si_utilisateur_a_des_predictions(mock_dispo, mock_p
     assert "prédiction" in reponse_suppression.json()["detail"].lower()
 
     # L'utilisateur doit toujours exister en base après la tentative refusée
-    usernames = [u["username"] for u in client.get("/users", headers=entetes_admin).json()]
+    usernames = [
+        u["username"] for u in client.get("/users", headers=entetes_admin).json()
+    ]
     assert "agriculteur_avec_predictions" in usernames

@@ -1,9 +1,7 @@
 """Schémas Pydantic pour l'historique des prédictions (Issue #32).
 
 Expose :
-- HistoryItem   : représente une prédiction sauvegardée en BDD
-- HistoryResponse : liste paginée de HistoryItem (non utilisée directement mais
-                    conservée pour une évolution future vers la pagination)
+- HistoryItem : représente une prédiction sauvegardée en BDD
 """
 
 from datetime import datetime
