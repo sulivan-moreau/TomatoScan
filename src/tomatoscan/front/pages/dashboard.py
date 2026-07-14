@@ -7,7 +7,7 @@ direct à Grafana.
 Refonte visuelle (issue #33 suite) : les 2 chiffres clés (agriculteurs,
 prédictions) mis en avant via des st.container(key=...) colorés façon
 "metric card" — mêmes variables nb_agriculteurs/nb_predictions qu'avant,
-logique d'appel API/rôle/suppression inchangée, voir docs/brief_design.md.
+logique d'appel API/rôle/suppression inchangée.
 """
 
 import os
@@ -17,6 +17,7 @@ import streamlit as st
 
 from utils import api_client
 from utils.api_client import ApiError
+from utils.session import gerer_erreur_401
 
 # --- Garde-fou : token + rôle admin -----------------------------------------
 token = st.session_state.get("token")
@@ -54,11 +55,8 @@ try:
         # Grâce au filtrage par rôle côté API, un admin reçoit l'historique complet
         toutes_predictions = api_client.get_history(token)
 except ApiError as erreur:
-    if erreur.status_code == 401:
-        st.session_state.clear()
-        st.rerun()
-    else:
-        st.error(f"Impossible de charger les données du tableau de bord : {erreur}")
+    gerer_erreur_401(erreur)
+    st.error(f"Impossible de charger les données du tableau de bord : {erreur}")
     st.stop()
 
 agriculteurs = [u for u in utilisateurs if u.get("role") != "admin"]

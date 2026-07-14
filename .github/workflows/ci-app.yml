@@ -74,6 +74,17 @@ jobs:
       - name: Installation des dépendances
         run: uv sync --extra dev
 
+      # Étape 4bis — Audit des dépendances installées contre la base de vulnérabilités connues
+      # (OSV/PyPI Advisory). Scanne l'environnement réellement installé (-l/--local), pas une
+      # ré-résolution à part — cohérent avec les versions verrouillées par uv.lock.
+      # Si une vulnérabilité sans correctif disponible apparaît un jour, l'ignorer explicitement
+      # ici avec --ignore-vuln <ID> et un commentaire justifiant pourquoi (ex. package non
+      # utilisé sur le chemin vulnérable, ou fix indisponible pour la version Python cible) —
+      # plutôt que de faire échouer la CI indéfiniment sur un correctif hors de notre contrôle.
+      # Aucune vulnérabilité sans fix n'est ignorée actuellement : aucune trouvée à ce jour.
+      - name: Audit de sécurité des dépendances (pip-audit)
+        run: uv run --with pip-audit pip-audit -l
+
       # Étape 5 — Vérification du style et des erreurs statiques avec ruff
       - name: Lint (ruff)
         run: uv run ruff check src/

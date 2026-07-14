@@ -15,7 +15,18 @@ from tomatoscan.database.modeles import User
 router = APIRouter(prefix="/auth", tags=["Authentification"])
 
 
-@router.post("/token", response_model=TokenResponse)
+@router.post(
+    "/token",
+    response_model=TokenResponse,
+    responses={
+        401: {
+            "description": "Identifiants invalides (nom d'utilisateur ou mot de passe incorrect)."
+        },
+        429: {
+            "description": "Trop de tentatives — limité à 5 requêtes par minute par IP."
+        },
+    },
+)
 @limiteur.limit("5/minute")
 def connexion(
     request: Request,

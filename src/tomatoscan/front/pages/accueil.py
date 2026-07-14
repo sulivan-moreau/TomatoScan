@@ -4,7 +4,7 @@ Non connecté : présentation courte + lien vers la connexion.
 Connecté : liens rapides vers les pages disponibles pour l'utilisateur —
 le filtrage par rôle réutilise exactement le même test que app.py
 (api_client.obtenir_role(token) == "admin", jamais session_state.role,
-qui n'est jamais stocké — voir docs/audit_role_final_complet.md).
+qui n'est jamais stocké séparément).
 
 Accueil est la page d'atterrissage non connecté (app.py) : le message de
 session expirée (posé par main() dans app.py) est donc affiché ici plutôt
@@ -12,7 +12,7 @@ que sur pages/login.py, pour être vu immédiatement.
 
 Refonte visuelle (issue #33 suite) : mise en avant via des blocs
 st.container(key=...) stylés en CSS scoped à cette page (.st-key-*) —
-palette et logique de navigation/rôle inchangées, voir docs/brief_design.md.
+palette et logique de navigation/rôle inchangées.
 """
 
 import streamlit as st

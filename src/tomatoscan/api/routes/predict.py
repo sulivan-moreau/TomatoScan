@@ -53,7 +53,19 @@ def _obtenir_ou_creer_user(nom_utilisateur: str, session: Session) -> int:
     return utilisateur.id
 
 
-@router.post("/predict", response_model=PredictionResponse)
+@router.post(
+    "/predict",
+    response_model=PredictionResponse,
+    responses={
+        400: {
+            "description": "Format non supporté, fichier trop volumineux (> 5 Mo) ou image corrompue."
+        },
+        401: {"description": "Token invalide, expiré ou absent."},
+        503: {
+            "description": "Modèle de prédiction indisponible ou erreur d'inférence."
+        },
+    },
+)
 async def predire_maladie(
     fichier: UploadFile = File(...),
     _utilisateur: str = Depends(obtenir_utilisateur_courant),

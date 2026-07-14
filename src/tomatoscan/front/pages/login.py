@@ -10,8 +10,8 @@ la logique du formulaire elle-même est inchangée, seule la structure (fonction
 
 Refonte visuelle (issue #33 suite) : formulaire dans une carte
 st.container(key="login_card") stylée en CSS scoped — logique d'auth
-inchangée, voir docs/brief_design.md. Le logo garde l'emoji 🍅 (identité
-de marque) plutôt que l'icône proposée en maquette : Material Symbols n'a
+inchangée. Le logo garde l'emoji 🍅 (identité de marque) plutôt que
+l'icône Material Symbols proposée en maquette : Material Symbols n'a
 pas d'équivalent "tomate", et le favicon/logo utilisent déjà cet emoji
 ailleurs dans le projet.
 """
@@ -54,8 +54,7 @@ with centre:
                     st.session_state.username = nom_utilisateur
                     # Le rôle n'est jamais stocké séparément : il est recalculé à
                     # la demande depuis le token (api_client.obtenir_role), pour
-                    # qu'il ne puisse structurellement pas se désynchroniser du
-                    # token — voir docs/audit_role_final_complet.md.
+                    # qu'il ne puisse structurellement pas se désynchroniser du token.
                     # Redirection vers la navigation principale
                     st.rerun()
                 except ApiError as erreur:
