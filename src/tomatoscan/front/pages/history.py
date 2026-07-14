@@ -27,7 +27,7 @@ st.title("Historique des analyses")
 st.caption("Retrouvez toutes vos analyses de feuilles de tomate.")
 
 # Lien vers les métriques globales — réservé admin, même test de rôle que app.py:123
-if st.session_state.get("role") == "admin":
+if api_client.obtenir_role(token) == "admin":
     st.page_link(
         "pages/dashboard.py",
         label="Voir les métriques globales (tous utilisateurs) dans le Tableau de bord",

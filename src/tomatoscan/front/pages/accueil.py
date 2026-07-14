@@ -2,8 +2,9 @@
 
 Non connecté : présentation courte + lien vers la connexion.
 Connecté : liens rapides vers les pages disponibles pour l'utilisateur —
-le filtrage par rôle réutilise exactement le même test que app.py:123
-(st.session_state.get("role") == "admin"), pas de logique dupliquée.
+le filtrage par rôle réutilise exactement le même test que app.py
+(api_client.obtenir_role(token) == "admin", jamais session_state.role,
+qui n'est jamais stocké — voir docs/audit_role_final_complet.md).
 
 Accueil est la page d'atterrissage non connecté (app.py) : le message de
 session expirée (posé par main() dans app.py) est donc affiché ici plutôt
@@ -15,6 +16,8 @@ palette et logique de navigation/rôle inchangées, voir docs/brief_design.md.
 """
 
 import streamlit as st
+
+from utils import api_client
 
 st.title("TomatoScan")
 st.caption(
@@ -82,7 +85,7 @@ else:
         )
         st.caption("Retrouvez vos diagnostics passés et leur score de confiance.")
 
-    if st.session_state.get("role") == "admin":
+    if api_client.obtenir_role(st.session_state.get("token")) == "admin":
         with st.container(key="card_admin_group"):
             st.markdown(":material/admin_panel_settings: **Administration**")
             colonne_a, colonne_b = st.columns(2)

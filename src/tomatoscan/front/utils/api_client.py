@@ -12,12 +12,11 @@ Les erreurs HTTP sont remontées via ApiError, qui porte le code HTTP
 (status_code) afin que les pages puissent réagir précisément (401, 400, 503…).
 """
 
-import base64
-import json
 import logging
 import os
 import time
 
+import jwt
 import requests
 
 # loguru n'est pas une dépendance du frontend déployé (Dockerfile.front installe
@@ -146,18 +145,14 @@ def login(nom_utilisateur: str, mot_de_passe: str) -> str:
 
 
 def _decoder_payload_token(token: str) -> dict:
-    """Décode la payload d'un JWT sans vérifier la signature.
+    """Décode la payload d'un JWT sans vérifier la signature (la vérification de
+    validité se fait côté API, ici on lit juste le contenu pour affichage côté client).
 
-    La vérification cryptographique est effectuée côté serveur à chaque appel
-    API protégé — ce décodage local sert uniquement à lire des informations
-    d'affichage (expiration, rôle) sans appel réseau.
+    Décodage délégué à PyJWT plutôt que fait à la main (ancien code : découpage
+    manuel + base64) — PyJWT gère correctement l'encodage base64url du JWT
+    (RFC 7519) et le padding, sans réinventer cette logique ici.
     """
-    # La payload JWT est la 2e section (index 1), encodée en base64url (RFC 7519 —
-    # alphabet -_ et non +/, d'où urlsafe_b64decode et non b64decode standard).
-    partie_payload = token.split(".")[1]
-    # Ajouter le padding manquant pour décoder en base64url
-    partie_payload += "=" * (4 - len(partie_payload) % 4)
-    return json.loads(base64.urlsafe_b64decode(partie_payload))
+    return jwt.decode(token, options={"verify_signature": False})
 
 
 def is_token_valid(token: str | None = None) -> bool:
@@ -172,7 +167,7 @@ def is_token_valid(token: str | None = None) -> bool:
         return time.time() < date_expiration
     except Exception:
         # Token malformé → invalide. Loggué pour ne pas masquer silencieusement
-        # un échec de décodage réel (ex. bug base64 non-urlsafe corrigé ici).
+        # un échec de décodage réel (jwt.decode lève une exception PyJWT).
         logger.warning("Échec du décodage du token JWT (is_token_valid)", exc_info=True)
         return False
 

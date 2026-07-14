@@ -24,7 +24,7 @@ if not token:
     st.warning("Veuillez vous connecter pour accéder à cette page.")
     st.stop()
 
-if st.session_state.get("role") != "admin":
+if api_client.obtenir_role(token) != "admin":
     st.error("Accès réservé aux administrateurs.")
     st.stop()
 
