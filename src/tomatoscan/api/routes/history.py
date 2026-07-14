@@ -20,7 +20,11 @@ from tomatoscan.database.modeles import Prediction, User
 router = APIRouter(tags=["Historique"])
 
 
-@router.get("/predictions/history", response_model=list[HistoryItem])
+@router.get(
+    "/predictions/history",
+    response_model=list[HistoryItem],
+    responses={401: {"description": "Token invalide, expiré ou absent."}},
+)
 def obtenir_historique(
     nom_utilisateur: str = Depends(obtenir_utilisateur_courant),
     role: str = Depends(obtenir_role_courant),
@@ -53,7 +57,10 @@ def obtenir_historique(
         logger.debug(
             f"{len(predictions)} prédiction(s) trouvée(s) pour {nom_utilisateur!r} (rôle : {role})."
         )
-        return predictions
+        # Conversion explicite en HistoryItem : le type annoncé (list[HistoryItem])
+        # doit correspondre à ce qui est réellement retourné, pas seulement à ce
+        # que FastAPI sérialise implicitement via response_model.
+        return [HistoryItem.model_validate(prediction) for prediction in predictions]
 
     except Exception as erreur:
         logger.error(f"Erreur lors de la récupération de l'historique : {erreur}")

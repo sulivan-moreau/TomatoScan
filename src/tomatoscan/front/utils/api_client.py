@@ -3,9 +3,13 @@
 Expose :
 - ping()           — vérifie que l'API répond (GET /health)
 - login()          — authentifie l'utilisateur, retourne le token JWT
+- is_token_valid() — vérifie localement que le token n'est pas expiré
+- obtenir_role()   — extrait le rôle depuis le token (jamais stocké séparément)
 - predict()        — envoie une image, retourne le résultat de prédiction
 - get_history()    — récupère l'historique des prédictions de l'utilisateur
-- is_token_valid() — vérifie localement que le token n'est pas expiré
+- list_users()     — liste les comptes utilisateurs (admin uniquement)
+- create_user()    — crée un compte agriculteur (admin uniquement)
+- delete_user()    — supprime un compte utilisateur (admin uniquement)
 - fr_label()       — traduit une classe brute du modèle en libellé français
 
 Les erreurs HTTP sont remontées via ApiError, qui porte le code HTTP
@@ -15,6 +19,7 @@ Les erreurs HTTP sont remontées via ApiError, qui porte le code HTTP
 import logging
 import os
 import time
+from typing import Callable
 
 import jwt
 import requests
@@ -87,11 +92,86 @@ def _entetes_auth(token: str) -> dict:
 
 
 def _extraire_detail(reponse, message_defaut: str) -> str:
-    """Extrait un message d'erreur lisible depuis la réponse JSON de l'API."""
+    """Extrait un message d'erreur lisible depuis la réponse JSON de l'API.
+
+    Repli sûr sur message_defaut si le corps n'est pas du JSON valide (ValueError)
+    OU si c'est du JSON valide mais pas un objet (ex. une liste ou une chaîne —
+    .get() n'existerait pas dessus, d'où le AttributeError explicitement couvert).
+    """
     try:
-        return reponse.json().get("detail", message_defaut)
+        corps = reponse.json()
     except ValueError:
         return message_defaut
+    if not isinstance(corps, dict):
+        return message_defaut
+    return corps.get("detail", message_defaut)
+
+
+def _requete_api(
+    methode: str,
+    chemin: str,
+    *,
+    token: str | None = None,
+    json_corps: dict | None = None,
+    fichiers: dict | None = None,
+    timeout: int = TIMEOUT,
+    message_erreur_reseau: str,
+    message_erreur_defaut: str | Callable[[requests.Response], str],
+    messages_par_code: dict[int, str] | None = None,
+) -> requests.Response:
+    """Exécute une requête HTTP vers l'API et centralise la gestion des erreurs
+    réseau et des réponses non-2xx — squelette commun à login/predict/
+    list_users/create_user/delete_user/get_history (auparavant dupliqué
+    identiquement dans chacune). Chaque appelant garde la responsabilité
+    d'interpréter le corps de la réponse en cas de succès (2xx) ; seule la
+    gestion des erreurs et le timeout sont mutualisés ici.
+
+    messages_par_code permet de substituer un message fixe pour un code HTTP
+    précis (ex. 401 sur /auth/token affiche toujours le même message convivial
+    plutôt que le detail brut renvoyé par l'API) — comportement préexistant de
+    login(), conservé à l'identique par ce paramètre plutôt que supprimé.
+
+    Dispatch explicite vers requests.get/post/delete (plutôt que
+    requests.request générique) pour que le point d'entrée réseau reste
+    identique à celui d'avant la factorisation — tests/test_frontend/
+    test_api_client.py patche "tomatoscan.front.utils.api_client.requests.post"
+    directement, ce patch doit continuer à intercepter les appels.
+    """
+    fonctions_par_methode = {
+        "GET": requests.get,
+        "POST": requests.post,
+        "DELETE": requests.delete,
+    }
+    appel_requests = fonctions_par_methode[methode]
+    entetes = _entetes_auth(token) if token else None
+    try:
+        reponse = appel_requests(
+            f"{API_URL}{chemin}",
+            headers=entetes,
+            json=json_corps,
+            files=fichiers,
+            timeout=timeout,
+        )
+    except requests.RequestException:
+        raise ApiError(message_erreur_reseau, status_code=None)
+
+    if not reponse.ok:
+        if messages_par_code and reponse.status_code in messages_par_code:
+            raise ApiError(
+                messages_par_code[reponse.status_code],
+                status_code=reponse.status_code,
+            )
+        defaut = (
+            message_erreur_defaut(reponse)
+            if callable(message_erreur_defaut)
+            else message_erreur_defaut
+        )
+        raise ApiError(
+            _extraire_detail(reponse, defaut),
+            status_code=reponse.status_code,
+        )
+
+    return reponse
 
 
 # --- Fonctions publiques ----------------------------------------------------
@@ -118,25 +198,16 @@ def login(nom_utilisateur: str, mot_de_passe: str) -> str:
     Lève ApiError (avec status_code) si les identifiants sont rejetés
     ou si l'API est injoignable.
     """
-    try:
-        reponse = requests.post(
-            f"{API_URL}/auth/token",
-            json={"username": nom_utilisateur, "password": mot_de_passe},
-            timeout=TIMEOUT,
-        )
-    except requests.RequestException:
-        raise ApiError("Impossible de joindre le serveur. Vérifiez votre connexion.")
-
-    if reponse.status_code == 401:
-        raise ApiError(
-            "Identifiants invalides. Vérifiez votre nom d'utilisateur et votre mot de passe.",
-            status_code=401,
-        )
-    if not reponse.ok:
-        raise ApiError(
-            _extraire_detail(reponse, "Échec de la connexion."),
-            status_code=reponse.status_code,
-        )
+    reponse = _requete_api(
+        "POST",
+        "/auth/token",
+        json_corps={"username": nom_utilisateur, "password": mot_de_passe},
+        message_erreur_reseau="Impossible de joindre le serveur. Vérifiez votre connexion.",
+        message_erreur_defaut="Échec de la connexion.",
+        messages_par_code={
+            401: "Identifiants invalides. Vérifiez votre nom d'utilisateur et votre mot de passe.",
+        },
+    )
 
     token = reponse.json().get("access_token")
     if not token:
@@ -200,23 +271,16 @@ def predict(octets_image: bytes, nom_fichier: str, token: str) -> dict:
     )
     type_contenu = "image/png" if extension == "png" else "image/jpeg"
 
-    try:
-        reponse = requests.post(
-            f"{API_URL}/predict",
-            headers=_entetes_auth(token),
-            # Le champ multipart s'appelle "fichier" côté API FastAPI
-            files={"fichier": (nom_fichier, octets_image, type_contenu)},
-            timeout=TIMEOUT_PREDICT,
-        )
-    except requests.RequestException:
-        # Erreur réseau : pas de code HTTP disponible
-        raise ApiError(
-            "Impossible de joindre le serveur pour l'analyse.", status_code=None
-        )
-
-    if not reponse.ok:
-        detail = _extraire_detail(reponse, f"Erreur {reponse.status_code}.")
-        raise ApiError(detail, status_code=reponse.status_code)
+    reponse = _requete_api(
+        "POST",
+        "/predict",
+        token=token,
+        # Le champ multipart s'appelle "fichier" côté API FastAPI
+        fichiers={"fichier": (nom_fichier, octets_image, type_contenu)},
+        timeout=TIMEOUT_PREDICT,
+        message_erreur_reseau="Impossible de joindre le serveur pour l'analyse.",
+        message_erreur_defaut=lambda r: f"Erreur {r.status_code}.",
+    )
 
     try:
         return reponse.json()
@@ -230,20 +294,13 @@ def list_users(token: str) -> list[dict]:
     Retourne une liste de dict (id, username, role, created_at).
     Lève ApiError (403 si le compte n'est pas admin) en cas d'erreur HTTP ou réseau.
     """
-    try:
-        reponse = requests.get(
-            f"{API_URL}/users", headers=_entetes_auth(token), timeout=TIMEOUT
-        )
-    except requests.RequestException:
-        raise ApiError(
-            "Impossible de joindre le serveur pour récupérer les utilisateurs."
-        )
-
-    if not reponse.ok:
-        raise ApiError(
-            _extraire_detail(reponse, "Impossible de récupérer les utilisateurs."),
-            status_code=reponse.status_code,
-        )
+    reponse = _requete_api(
+        "GET",
+        "/users",
+        token=token,
+        message_erreur_reseau="Impossible de joindre le serveur pour récupérer les utilisateurs.",
+        message_erreur_defaut="Impossible de récupérer les utilisateurs.",
+    )
 
     try:
         return reponse.json()
@@ -256,21 +313,14 @@ def create_user(nom_utilisateur: str, mot_de_passe: str, token: str) -> dict:
 
     Lève ApiError (409 si le username est déjà pris) en cas d'erreur HTTP ou réseau.
     """
-    try:
-        reponse = requests.post(
-            f"{API_URL}/users",
-            headers=_entetes_auth(token),
-            json={"username": nom_utilisateur, "password": mot_de_passe},
-            timeout=TIMEOUT,
-        )
-    except requests.RequestException:
-        raise ApiError("Impossible de joindre le serveur pour créer le compte.")
-
-    if not reponse.ok:
-        raise ApiError(
-            _extraire_detail(reponse, "Échec de la création du compte."),
-            status_code=reponse.status_code,
-        )
+    reponse = _requete_api(
+        "POST",
+        "/users",
+        token=token,
+        json_corps={"username": nom_utilisateur, "password": mot_de_passe},
+        message_erreur_reseau="Impossible de joindre le serveur pour créer le compte.",
+        message_erreur_defaut="Échec de la création du compte.",
+    )
 
     try:
         return reponse.json()
@@ -278,24 +328,22 @@ def create_user(nom_utilisateur: str, mot_de_passe: str, token: str) -> dict:
         raise ApiError("Réponse de l'API illisible (JSON attendu).")
 
 
-def delete_user(user_id: int, token: str) -> None:
+def delete_user(user_id: str, token: str) -> None:
     """Supprime un compte utilisateur via DELETE /users/{id} (admin uniquement).
+
+    user_id est une chaîne (UUID côté API depuis la migration des identifiants
+    utilisateur) — jamais parsée côté frontend, uniquement interpolée dans l'URL.
 
     Lève ApiError (400 si auto-suppression, 409 si l'utilisateur a des prédictions)
     en cas d'erreur HTTP ou réseau.
     """
-    try:
-        reponse = requests.delete(
-            f"{API_URL}/users/{user_id}", headers=_entetes_auth(token), timeout=TIMEOUT
-        )
-    except requests.RequestException:
-        raise ApiError("Impossible de joindre le serveur pour supprimer le compte.")
-
-    if not reponse.ok:
-        raise ApiError(
-            _extraire_detail(reponse, "Échec de la suppression du compte."),
-            status_code=reponse.status_code,
-        )
+    _requete_api(
+        "DELETE",
+        f"/users/{user_id}",
+        token=token,
+        message_erreur_reseau="Impossible de joindre le serveur pour supprimer le compte.",
+        message_erreur_defaut="Échec de la suppression du compte.",
+    )
 
 
 def get_history(token: str) -> list[dict]:
@@ -304,20 +352,13 @@ def get_history(token: str) -> list[dict]:
     Retourne une liste de dict (id, nom_fichier, classe_predite, confiance, created_at).
     Lève ApiError si l'API retourne une erreur ou est injoignable.
     """
-    try:
-        reponse = requests.get(
-            f"{API_URL}/predictions/history",
-            headers=_entetes_auth(token),
-            timeout=TIMEOUT,
-        )
-    except requests.RequestException:
-        raise ApiError("Impossible de joindre le serveur pour récupérer l'historique.")
-
-    if not reponse.ok:
-        raise ApiError(
-            _extraire_detail(reponse, "Impossible de récupérer l'historique."),
-            status_code=reponse.status_code,
-        )
+    reponse = _requete_api(
+        "GET",
+        "/predictions/history",
+        token=token,
+        message_erreur_reseau="Impossible de joindre le serveur pour récupérer l'historique.",
+        message_erreur_defaut="Impossible de récupérer l'historique.",
+    )
 
     try:
         return reponse.json()
