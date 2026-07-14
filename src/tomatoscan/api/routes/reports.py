@@ -18,7 +18,17 @@ router = APIRouter(tags=["Rapports"])
 CHEMIN_DEFAUT = "models/historique_20260624_161841.csv"
 
 
-@router.get("/reports", response_model=RapportResponse)
+@router.get(
+    "/reports",
+    response_model=RapportResponse,
+    responses={
+        401: {"description": "Token invalide, expiré ou absent."},
+        404: {
+            "description": "Fichier CSV introuvable au chemin configuré (REPORTS_PATH)."
+        },
+        500: {"description": "Erreur de lecture ou format CSV invalide."},
+    },
+)
 def obtenir_rapport(
     _utilisateur: str = Depends(obtenir_utilisateur_courant),
 ) -> RapportResponse:

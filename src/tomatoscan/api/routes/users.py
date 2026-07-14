@@ -4,6 +4,8 @@ Routes GET/POST/DELETE /users — gestion des comptes agriculteur.
 Toutes réservées aux administrateurs via Depends(verifier_role_admin).
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -18,7 +20,16 @@ from tomatoscan.database.connexion import obtenir_session
 from tomatoscan.database.modeles import Prediction, User
 
 router = APIRouter(
-    prefix="/users", tags=["Utilisateurs"], dependencies=[Depends(verifier_role_admin)]
+    prefix="/users",
+    tags=["Utilisateurs"],
+    dependencies=[Depends(verifier_role_admin)],
+    # Communs aux 3 routes ci-dessous : verifier_role_admin (et sa dépendance
+    # obtenir_role_courant → _decoder_charge) lève 401 puis 403 avant même
+    # d'atteindre le corps de la route.
+    responses={
+        401: {"description": "Token invalide, expiré ou absent."},
+        403: {"description": "Rôle insuffisant — réservé aux administrateurs."},
+    },
 )
 
 
@@ -28,7 +39,12 @@ def lister_utilisateurs(session: Session = Depends(obtenir_session)) -> list[Use
     return session.query(User).order_by(User.created_at.asc()).all()
 
 
-@router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=UserOut,
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"description": "Ce nom d'utilisateur est déjà utilisé."}},
+)
 def creer_utilisateur(
     donnees: UserCreate, session: Session = Depends(obtenir_session)
 ) -> User:
@@ -57,9 +73,21 @@ def creer_utilisateur(
     return utilisateur
 
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        400: {
+            "description": "Un administrateur ne peut pas supprimer son propre compte."
+        },
+        404: {"description": "Utilisateur introuvable."},
+        409: {
+            "description": "Suppression refusée — l'utilisateur a des prédictions enregistrées."
+        },
+    },
+)
 def supprimer_utilisateur(
-    user_id: int,
+    user_id: UUID,
     nom_admin: str = Depends(obtenir_utilisateur_courant),
     session: Session = Depends(obtenir_session),
 ) -> None:
