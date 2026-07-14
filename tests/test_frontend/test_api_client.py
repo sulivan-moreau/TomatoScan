@@ -21,14 +21,26 @@ Les 4 tâches de l'issue #14 sont couvertes par les classes de tests ci-dessous 
 - TestPredictErreur   → tâche 3 (POST /predict avec token expiré → 401)
 """
 
+import base64
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tomatoscan.front.utils.api_client import ApiError, API_URL, login, predict
+from tomatoscan.front.utils.api_client import (
+    ApiError,
+    API_URL,
+    _decoder_payload_token,
+    is_token_valid,
+    login,
+    obtenir_role,
+    predict,
+)
 
 
-def _reponse_mock(status_code: int, corps_json: dict, ok: bool | None = None) -> MagicMock:
+def _reponse_mock(
+    status_code: int, corps_json: dict, ok: bool | None = None
+) -> MagicMock:
     """Construit un faux requests.Response — .ok suit status_code si non précisé,
     comme le fait le vrai objet requests.Response (ok = status_code < 400)."""
     reponse = MagicMock()
@@ -69,7 +81,9 @@ class TestLogin:
 
     @patch("tomatoscan.front.utils.api_client.requests.post")
     def test_login_identifiants_invalides_leve_apierror_401(self, mock_post):
-        mock_post.return_value = _reponse_mock(401, {"detail": "Identifiants invalides"})
+        mock_post.return_value = _reponse_mock(
+            401, {"detail": "Identifiants invalides"}
+        )
 
         with pytest.raises(ApiError) as erreur:
             login("admin", "mauvais_mot_de_passe")
@@ -101,7 +115,9 @@ class TestPredictSucces:
             {"classe": "Tomato_healthy", "confiance": 0.97, "message": "Tomate saine."},
         )
 
-        predict(b"\xff\xd8\xff\xe0contenu_image_factice", "feuille.jpg", "mon.token.valide")
+        predict(
+            b"\xff\xd8\xff\xe0contenu_image_factice", "feuille.jpg", "mon.token.valide"
+        )
 
         mock_post.assert_called_once()
         _, kwargs = mock_post.call_args
@@ -126,7 +142,9 @@ class TestPredictSucces:
         assert type_contenu == "image/jpeg"
 
     @patch("tomatoscan.front.utils.api_client.requests.post")
-    def test_predict_reponse_200_retourne_le_format_attendu_par_la_page(self, mock_post):
+    def test_predict_reponse_200_retourne_le_format_attendu_par_la_page(
+        self, mock_post
+    ):
         """pages/predict.py lit resultat.get("classe"), resultat.get("confiance", 0),
         resultat.get("message") (predict.py:80-82,114) — vérifie que predict()
         retourne bien un dict avec exactement ces 3 clés et les bonnes valeurs."""
@@ -158,7 +176,11 @@ class TestPredictSucces:
         transite intacte depuis la réponse API jusqu'au dict retourné par predict()."""
         mock_post.return_value = _reponse_mock(
             200,
-            {"classe": "Tomato_healthy", "confiance": 0.995, "message": "Tomate saine."},
+            {
+                "classe": "Tomato_healthy",
+                "confiance": 0.995,
+                "message": "Tomate saine.",
+            },
         )
 
         resultat = predict(b"contenu_image_factice", "feuille.jpg", "mon.token.valide")
@@ -197,7 +219,9 @@ class TestPredictErreur:
 
     @patch("tomatoscan.front.utils.api_client.requests.post")
     def test_predict_401_leve_apierror_avec_le_bon_status_code(self, mock_post):
-        mock_post.return_value = _reponse_mock(401, {"detail": "Token invalide ou expiré"})
+        mock_post.return_value = _reponse_mock(
+            401, {"detail": "Token invalide ou expiré"}
+        )
 
         with pytest.raises(ApiError) as erreur:
             predict(b"contenu_image_factice", "feuille.jpg", "token.expire")
@@ -205,11 +229,15 @@ class TestPredictErreur:
         assert erreur.value.status_code == 401
 
     @patch("tomatoscan.front.utils.api_client.requests.post")
-    def test_predict_401_le_message_d_erreur_reprend_le_detail_de_l_api(self, mock_post):
+    def test_predict_401_le_message_d_erreur_reprend_le_detail_de_l_api(
+        self, mock_post
+    ):
         """Le message de l'exception doit être exploitable par la page Streamlit
         (pages/predict.py catch ApiError et distingue le cas 401 pour rediriger),
         pas un message générique qui masquerait la vraie cause."""
-        mock_post.return_value = _reponse_mock(401, {"detail": "Token invalide ou expiré"})
+        mock_post.return_value = _reponse_mock(
+            401, {"detail": "Token invalide ou expiré"}
+        )
 
         with pytest.raises(ApiError) as erreur:
             predict(b"contenu_image_factice", "feuille.jpg", "token.expire")
@@ -221,7 +249,9 @@ class TestPredictErreur:
         """Vérifie explicitement l'absence de plantage silencieux : predict() ne
         doit jamais retourner None ou un dict vide en cas d'erreur — uniquement
         lever ApiError, pour forcer l'appelant (pages/predict.py) à la traiter."""
-        mock_post.return_value = _reponse_mock(401, {"detail": "Token invalide ou expiré"})
+        mock_post.return_value = _reponse_mock(
+            401, {"detail": "Token invalide ou expiré"}
+        )
 
         try:
             resultat = predict(b"contenu_image_factice", "feuille.jpg", "token.expire")
@@ -244,3 +274,92 @@ class TestPredictErreur:
             predict(b"contenu_image_factice", "feuille.jpg", "un.token")
 
         assert erreur.value.status_code is None
+
+
+def _fabriquer_jwt(payload: dict) -> str:
+    """Construit un faux JWT (header.payload.signature) pour les tests de décodage.
+
+    Seule la partie payload est lue par _decoder_payload_token — header et
+    signature n'ont pas besoin d'être valides cryptographiquement.
+    """
+
+    def _b64url(donnees: bytes) -> str:
+        return base64.urlsafe_b64encode(donnees).rstrip(b"=").decode()
+
+    entete = _b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    corps = _b64url(json.dumps(payload, separators=(",", ":")).encode())
+    signature = _b64url(b"signature-factice")
+    return f"{entete}.{corps}.{signature}"
+
+
+class TestDecodageJWTBase64Url:
+    """Reproduction du bug base64 standard vs base64url (issue décodage JWT).
+
+    Propriété non triviale utilisée pour construire le cas de test : un payload
+    JSON purement alphanumérique (lettres/chiffres) ne peut JAMAIS produire de
+    caractère '-' ou '_' en base64url — il faut au moins un octet dont le motif
+    binaire génère un groupe de 6 bits valant 62 ou 63, ce qu'aucun caractère
+    alphanumérique ASCII ne permet (bit de poids fort toujours à 0, séquences
+    de 1 consécutifs trop courtes). D'où le choix d'un "sub" contenant des
+    caractères spéciaux ci-dessous : c'est le cas réel qui déclenche le bug
+    (un username alphanumérique classique, lui, ne le déclencherait jamais).
+    """
+
+    PAYLOAD_DECLENCHEUR = {
+        "sub": "?9ck|EWrLzwS",
+        "role": "admin",
+        "exp": 9_999_999_999,
+    }
+
+    def test_le_payload_choisi_contient_bien_un_caractere_base64url_specifique(self):
+        """Garde-fou : vérifie que le payload de test produit réellement un '-'
+        ou un '_' en base64url (sans quoi le test ne reproduirait rien)."""
+        corps = json.dumps(self.PAYLOAD_DECLENCHEUR, separators=(",", ":")).encode()
+        b64url = base64.urlsafe_b64encode(corps).decode()
+        assert "-" in b64url or "_" in b64url
+
+    def test_base64_standard_echoue_sur_ce_payload(self):
+        """Preuve du bug : le décodage avec l'alphabet standard (base64.b64decode),
+        celui utilisé avant correction, échoue ou produit un résultat corrompu
+        sur ce payload précis."""
+        token = _fabriquer_jwt(self.PAYLOAD_DECLENCHEUR)
+        partie_payload = token.split(".")[1]
+        partie_payload += "=" * (4 - len(partie_payload) % 4)
+
+        with pytest.raises(Exception):
+            # base64.b64decode (validate=False) ignore silencieusement les
+            # caractères hors alphabet standard ('-'/'_'), corrompant les
+            # octets décodés — json.loads/UTF-8 échoue en aval.
+            json.loads(base64.b64decode(partie_payload))
+
+    def test_urlsafe_b64decode_decode_correctement_ce_meme_payload(self):
+        """Le correctif (base64.urlsafe_b64decode, utilisé par
+        _decoder_payload_token depuis la correction) doit décoder ce même
+        payload sans erreur et retrouver les bonnes valeurs."""
+        token = _fabriquer_jwt(self.PAYLOAD_DECLENCHEUR)
+
+        decode = _decoder_payload_token(token)
+
+        assert decode == self.PAYLOAD_DECLENCHEUR
+
+    def test_obtenir_role_lit_le_bon_role_meme_avec_ce_payload_a_risque(self):
+        """Test de bout en bout via la fonction publique réellement utilisée par
+        pages/login.py : le rôle doit être lu correctement, pas retomber sur le
+        défaut "agriculteur" à cause d'un échec de décodage masqué."""
+        token = _fabriquer_jwt(self.PAYLOAD_DECLENCHEUR)
+
+        assert obtenir_role(token) == "admin"
+
+    def test_is_token_valid_lit_correctement_l_expiration_avec_ce_payload(self):
+        """Même vérification pour is_token_valid() (exp très éloignée → valide)."""
+        token = _fabriquer_jwt(self.PAYLOAD_DECLENCHEUR)
+
+        assert is_token_valid(token) is True
+
+    def test_obtenir_role_retombe_sur_le_defaut_si_le_token_est_vraiment_malforme(
+        self,
+    ):
+        """Non-régression : un token réellement invalide (pas seulement un
+        payload contenant '-'/'_') doit toujours retomber sur "agriculteur",
+        sans lever d'exception jusqu'à la page appelante."""
+        assert obtenir_role("token.invalide.non-base64") == "agriculteur"
