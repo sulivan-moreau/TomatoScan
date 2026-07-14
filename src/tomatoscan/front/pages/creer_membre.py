@@ -7,8 +7,8 @@ Refonte visuelle (issue #33 suite) : formulaire dans une carte
 st.container(key="creer_membre_card") à accent vert foncé #1b4332 (distinct
 du vert #2d6a4f de login_card, pour signaler visuellement un contexte
 admin-only sans introduire de nouvelle couleur) — logique de création
-inchangée, voir docs/brief_design.md. Badge "🛡 Admin" de la maquette
-remplacé par l'icône Material équivalente (:material/admin_panel_settings:),
+inchangée. Badge "🛡 Admin" de la maquette d'origine remplacé par l'icône
+Material équivalente (:material/admin_panel_settings:),
 cohérent avec le principe "emoji → icônes Material" et avec le même badge
 utilisé sur pages/accueil.py.
 """
@@ -17,6 +17,7 @@ import streamlit as st
 
 from utils import api_client
 from utils.api_client import ApiError
+from utils.session import gerer_erreur_401
 
 # --- Garde-fou : token + rôle admin -----------------------------------------
 token = st.session_state.get("token")
@@ -55,12 +56,9 @@ with st.container(key="creer_membre_card"):
                     api_client.create_user(nom_utilisateur, mot_de_passe, token)
                 st.success(f"Compte « {nom_utilisateur} » créé avec succès.")
             except ApiError as erreur:
-                if erreur.status_code == 401:
-                    st.session_state.clear()
-                    st.rerun()
-                else:
-                    # Message affiché tel que retourné par l'API (ex. 409 « déjà utilisé »)
-                    st.error(str(erreur))
+                gerer_erreur_401(erreur)
+                # Message affiché tel que retourné par l'API (ex. 409 « déjà utilisé »)
+                st.error(str(erreur))
 
 st.markdown(
     """<style>

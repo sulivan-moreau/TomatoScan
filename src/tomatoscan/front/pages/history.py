@@ -7,8 +7,7 @@ Refonte visuelle (issue #33 suite) : état vide mis en avant via un
 st.container(key="history_empty") avec lien direct vers l'analyse, et
 coloration de la colonne "Maladie détectée" via un Styler pandas (vert si
 "Tomate saine", rouge sinon) — pandas.Styler.map (pas .applymap, déprécié
-depuis pandas 2.1). Logique d'appel API et de filtrage par rôle inchangée,
-voir docs/brief_design.md.
+depuis pandas 2.1). Logique d'appel API et de filtrage par rôle inchangée.
 """
 
 import pandas as pd
@@ -16,6 +15,7 @@ import streamlit as st
 
 from utils import api_client
 from utils.api_client import ApiError
+from utils.session import gerer_erreur_401
 
 # Garde-fou d'authentification — redirige vers la connexion si aucun token
 token = st.session_state.get("token")
@@ -26,7 +26,7 @@ if not token:
 st.title("Historique des analyses")
 st.caption("Retrouvez toutes vos analyses de feuilles de tomate.")
 
-# Lien vers les métriques globales — réservé admin, même test de rôle que app.py:123
+# Lien vers les métriques globales — réservé admin, même test de rôle que app.py (main())
 if api_client.obtenir_role(token) == "admin":
     st.page_link(
         "pages/dashboard.py",
@@ -38,12 +38,9 @@ try:
     with st.spinner("Chargement de l'historique…"):
         entrees = api_client.get_history(token)
 except ApiError as erreur:
-    # Token expiré : nettoyage de la session et redirection
-    if erreur.status_code == 401:
-        st.session_state.clear()
-        st.rerun()
-    else:
-        st.error(f"Impossible de charger l'historique : {erreur}")
+    # Token expiré : nettoyage de la session et redirection (gerer_erreur_401)
+    gerer_erreur_401(erreur)
+    st.error(f"Impossible de charger l'historique : {erreur}")
     st.stop()
 
 if not entrees:

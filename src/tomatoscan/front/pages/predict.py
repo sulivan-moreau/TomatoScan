@@ -8,19 +8,19 @@ Parcours :
    rouge avec le nom de la maladie traduit, plus le score de confiance.
 
 Commentaires en français. Contrastes conformes WCAG AA (texte blanc sur
-fonds #2d6a4f et #c1121f : ratios respectivement 6.39:1 et 6.22:1 — calculés
-précisément par formule de luminance relative WCAG, voir docs/audit_frontend_existant.md).
+fonds #2d6a4f et #c1121f : ratios respectivement 6.39:1 et 6.22:1, calculés
+par formule de luminance relative WCAG).
 
 Refonte visuelle (issue #33 suite) : zone d'upload et bloc de recommandation
 mis en avant via st.container(key=...) + CSS scoped, icônes Material Symbols
 ajoutées dans les bandeaux résultat (déjà conformes WCAG, non touchés côté
-couleurs). Aucune logique d'appel API ni de gestion d'erreur modifiée —
-voir docs/brief_design.md.
+couleurs). Aucune logique d'appel API ni de gestion d'erreur modifiée.
 """
 
 import streamlit as st
 
 from utils import api_client
+from utils.session import gerer_erreur_401
 
 # Conseils génériques par maladie détectée (clés = valeurs brutes de l'API,
 # les mêmes que api_client.DISEASE_LABELS — pas de nom inventé). Pas de
@@ -126,11 +126,9 @@ with colonne_resultat:
             st.session_state.dernier_resultat = resultat
         except api_client.ApiError as erreur:
             # Traitement des codes HTTP significatifs.
-            if erreur.status_code == 401:
-                # Token expiré / invalide : on nettoie la session et on redirige.
-                st.session_state.clear()
-                st.rerun()
-            elif erreur.status_code == 400:
+            # Token expiré / invalide : on nettoie la session et on redirige.
+            gerer_erreur_401(erreur)
+            if erreur.status_code == 400:
                 st.error("Image invalide — vérifiez le format (jpg/png).")
             elif erreur.status_code == 503:
                 st.error(
