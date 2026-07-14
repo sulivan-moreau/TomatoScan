@@ -126,7 +126,7 @@ def main():
                 icon=":material/history:",
             ),
         ]
-        if st.session_state.get("role") == "admin":
+        if api_client.obtenir_role(token_actuel) == "admin":
             pages.append(
                 st.Page(
                     "pages/dashboard.py",

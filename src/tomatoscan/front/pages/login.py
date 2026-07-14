@@ -52,7 +52,10 @@ with centre:
                         token = api_client.login(nom_utilisateur, mot_de_passe)
                     st.session_state.token = token
                     st.session_state.username = nom_utilisateur
-                    st.session_state.role = api_client.obtenir_role(token)
+                    # Le rôle n'est jamais stocké séparément : il est recalculé à
+                    # la demande depuis le token (api_client.obtenir_role), pour
+                    # qu'il ne puisse structurellement pas se désynchroniser du
+                    # token — voir docs/audit_role_final_complet.md.
                     # Redirection vers la navigation principale
                     st.rerun()
                 except ApiError as erreur:

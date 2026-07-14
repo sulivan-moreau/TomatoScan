@@ -21,10 +21,9 @@ Les 4 tâches de l'issue #14 sont couvertes par les classes de tests ci-dessous 
 - TestPredictErreur   → tâche 3 (POST /predict avec token expiré → 401)
 """
 
-import base64
-import json
 from unittest.mock import MagicMock, patch
 
+import jwt
 import pytest
 
 from tomatoscan.front.utils.api_client import (
@@ -277,32 +276,28 @@ class TestPredictErreur:
 
 
 def _fabriquer_jwt(payload: dict) -> str:
-    """Construit un faux JWT (header.payload.signature) pour les tests de décodage.
-
-    Seule la partie payload est lue par _decoder_payload_token — header et
-    signature n'ont pas besoin d'être valides cryptographiquement.
-    """
-
-    def _b64url(donnees: bytes) -> str:
-        return base64.urlsafe_b64encode(donnees).rstrip(b"=").decode()
-
-    entete = _b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
-    corps = _b64url(json.dumps(payload, separators=(",", ":")).encode())
-    signature = _b64url(b"signature-factice")
-    return f"{entete}.{corps}.{signature}"
+    """Construit un vrai JWT via PyJWT (même mécanisme que l'API réelle,
+    voir tomatoscan.api.core.security.creer_token_acces) — la clé de
+    signature n'a pas d'importance ici, _decoder_payload_token ne la vérifie
+    jamais (verify_signature=False), seul le contenu de la payload compte."""
+    return jwt.encode(
+        payload, "cle-de-signature-sans-importance-pour-ce-test", algorithm="HS256"
+    )
 
 
-class TestDecodageJWTBase64Url:
-    """Reproduction du bug base64 standard vs base64url (issue décodage JWT).
+class TestDecodageJWTPyJWT:
+    """Décodage du payload JWT via PyJWT (remplace l'ancien décodage base64
+    manuel — issue "réinventer un décodage JWT à la main").
 
-    Propriété non triviale utilisée pour construire le cas de test : un payload
-    JSON purement alphanumérique (lettres/chiffres) ne peut JAMAIS produire de
-    caractère '-' ou '_' en base64url — il faut au moins un octet dont le motif
-    binaire génère un groupe de 6 bits valant 62 ou 63, ce qu'aucun caractère
-    alphanumérique ASCII ne permet (bit de poids fort toujours à 0, séquences
-    de 1 consécutifs trop courtes). D'où le choix d'un "sub" contenant des
-    caractères spéciaux ci-dessous : c'est le cas réel qui déclenche le bug
-    (un username alphanumérique classique, lui, ne le déclencherait jamais).
+    Le payload de test contient volontairement un caractère spécial dans
+    "sub" : un payload JSON purement alphanumérique ne peut JAMAIS produire
+    de caractère '-'/'_' en base64url (aucun octet ASCII alphanumérique ne
+    peut générer un groupe de 6 bits valant 62 ou 63 — bit de poids fort
+    toujours à 0). C'est exactement le genre de payload qui faisait échouer
+    l'ancien décodage base64.b64decode() (bug corrigé, puis la fonction
+    entière remplacée par PyJWT ici) — gardé comme cas de test exigeant,
+    même si PyJWT gère nativement l'alphabet base64url et ne peut plus,
+    par construction, reproduire ce bug précis.
     """
 
     PAYLOAD_DECLENCHEUR = {
@@ -311,31 +306,19 @@ class TestDecodageJWTBase64Url:
         "exp": 9_999_999_999,
     }
 
-    def test_le_payload_choisi_contient_bien_un_caractere_base64url_specifique(self):
-        """Garde-fou : vérifie que le payload de test produit réellement un '-'
-        ou un '_' en base64url (sans quoi le test ne reproduirait rien)."""
-        corps = json.dumps(self.PAYLOAD_DECLENCHEUR, separators=(",", ":")).encode()
-        b64url = base64.urlsafe_b64encode(corps).decode()
-        assert "-" in b64url or "_" in b64url
+    def test_decoder_payload_token_utilise_bien_pyjwt_pas_de_base64_manuel(self):
+        """Garde-fou anti-régression : le module ne doit plus importer/utiliser
+        base64 ou json pour le décodage JWT — seule la bibliothèque jwt (PyJWT)
+        doit être utilisée."""
+        import tomatoscan.front.utils.api_client as module_api_client
 
-    def test_base64_standard_echoue_sur_ce_payload(self):
-        """Preuve du bug : le décodage avec l'alphabet standard (base64.b64decode),
-        celui utilisé avant correction, échoue ou produit un résultat corrompu
-        sur ce payload précis."""
-        token = _fabriquer_jwt(self.PAYLOAD_DECLENCHEUR)
-        partie_payload = token.split(".")[1]
-        partie_payload += "=" * (4 - len(partie_payload) % 4)
+        assert not hasattr(module_api_client, "base64")
+        assert hasattr(module_api_client, "jwt")
 
-        with pytest.raises(Exception):
-            # base64.b64decode (validate=False) ignore silencieusement les
-            # caractères hors alphabet standard ('-'/'_'), corrompant les
-            # octets décodés — json.loads/UTF-8 échoue en aval.
-            json.loads(base64.b64decode(partie_payload))
-
-    def test_urlsafe_b64decode_decode_correctement_ce_meme_payload(self):
-        """Le correctif (base64.urlsafe_b64decode, utilisé par
-        _decoder_payload_token depuis la correction) doit décoder ce même
-        payload sans erreur et retrouver les bonnes valeurs."""
+    def test_decoder_payload_token_decode_correctement_le_payload_a_risque(self):
+        """_decoder_payload_token (désormais basée sur jwt.decode) doit
+        retrouver exactement le payload d'origine, y compris avec un
+        caractère spécial dans une claim."""
         token = _fabriquer_jwt(self.PAYLOAD_DECLENCHEUR)
 
         decode = _decoder_payload_token(token)
@@ -343,18 +326,33 @@ class TestDecodageJWTBase64Url:
         assert decode == self.PAYLOAD_DECLENCHEUR
 
     def test_obtenir_role_lit_le_bon_role_meme_avec_ce_payload_a_risque(self):
-        """Test de bout en bout via la fonction publique réellement utilisée par
-        pages/login.py : le rôle doit être lu correctement, pas retomber sur le
-        défaut "agriculteur" à cause d'un échec de décodage masqué."""
+        """Test de bout en bout via la fonction publique réellement utilisée
+        par les pages Streamlit : le rôle doit être lu correctement, pas
+        retomber sur le défaut "agriculteur" à cause d'un échec de décodage
+        masqué."""
         token = _fabriquer_jwt(self.PAYLOAD_DECLENCHEUR)
 
         assert obtenir_role(token) == "admin"
 
     def test_is_token_valid_lit_correctement_l_expiration_avec_ce_payload(self):
-        """Même vérification pour is_token_valid() (exp très éloignée → valide)."""
+        """Même vérification pour is_token_valid() (exp très éloignée → valide).
+        Vérifie aussi que jwt.decode(options={"verify_signature": False}) ne
+        lève pas d'exception sur un token non expiré signé avec une clé
+        quelconque — comportement nécessaire puisque is_token_valid() calcule
+        elle-même l'expiration plutôt que de laisser PyJWT la vérifier."""
         token = _fabriquer_jwt(self.PAYLOAD_DECLENCHEUR)
 
         assert is_token_valid(token) is True
+
+    def test_is_token_valid_ne_leve_pas_sur_un_token_deja_expire(self):
+        """jwt.decode(options={"verify_signature": False}) désactive aussi la
+        vérification d'expiration native de PyJWT — nécessaire pour que
+        is_token_valid() puisse elle-même comparer "exp" à l'heure actuelle,
+        plutôt que de recevoir une ExpiredSignatureError avant d'avoir pu lire
+        la payload."""
+        token = _fabriquer_jwt({"sub": "x", "role": "admin", "exp": 1})
+
+        assert is_token_valid(token) is False
 
     def test_obtenir_role_retombe_sur_le_defaut_si_le_token_est_vraiment_malforme(
         self,
@@ -363,3 +361,29 @@ class TestDecodageJWTBase64Url:
         payload contenant '-'/'_') doit toujours retomber sur "agriculteur",
         sans lever d'exception jusqu'à la page appelante."""
         assert obtenir_role("token.invalide.non-base64") == "agriculteur"
+
+
+class TestRoleJamaisStockeSepare:
+    """Preuve, côté api_client, que obtenir_role() est une fonction pure du
+    token — appelée deux fois avec le même token, elle renvoie toujours le
+    même résultat, et deux tokens différents (même émis à quelques instants
+    d'écart, seul "role" changeant) ne peuvent jamais donner le même rôle
+    par accident. Complète tests/test_frontend/test_navigation_role.py, qui
+    vérifie la même propriété au niveau de l'UI (session_state ne contient
+    jamais la clé "role")."""
+
+    def test_obtenir_role_est_deterministe_pour_un_meme_token(self):
+        token = _fabriquer_jwt({"sub": "x", "role": "admin", "exp": 9_999_999_999})
+
+        assert obtenir_role(token) == obtenir_role(token) == "admin"
+
+    def test_deux_tokens_de_roles_differents_donnent_des_roles_differents(self):
+        token_admin = _fabriquer_jwt(
+            {"sub": "x", "role": "admin", "exp": 9_999_999_999}
+        )
+        token_agriculteur = _fabriquer_jwt(
+            {"sub": "x", "role": "agriculteur", "exp": 9_999_999_999}
+        )
+
+        assert obtenir_role(token_admin) == "admin"
+        assert obtenir_role(token_agriculteur) == "agriculteur"
