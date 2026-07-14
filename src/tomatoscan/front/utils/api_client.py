@@ -14,10 +14,16 @@ Les erreurs HTTP sont remontées via ApiError, qui porte le code HTTP
 
 import base64
 import json
+import logging
 import os
 import time
 
 import requests
+
+# loguru n'est pas une dépendance du frontend déployé (Dockerfile.front installe
+# requirements.txt, un sous-ensemble volontairement minimal de pyproject.toml —
+# voir Dockerfile.front) : on utilise donc le module logging standard ici, pas loguru.
+logger = logging.getLogger(__name__)
 
 # Chargement optionnel d'un fichier .env (sans dépendance obligatoire).
 try:
@@ -146,11 +152,12 @@ def _decoder_payload_token(token: str) -> dict:
     API protégé — ce décodage local sert uniquement à lire des informations
     d'affichage (expiration, rôle) sans appel réseau.
     """
-    # La payload JWT est la 2e section (index 1), encodée en base64url
+    # La payload JWT est la 2e section (index 1), encodée en base64url (RFC 7519 —
+    # alphabet -_ et non +/, d'où urlsafe_b64decode et non b64decode standard).
     partie_payload = token.split(".")[1]
-    # Ajouter le padding manquant pour décoder en base64 standard
+    # Ajouter le padding manquant pour décoder en base64url
     partie_payload += "=" * (4 - len(partie_payload) % 4)
-    return json.loads(base64.b64decode(partie_payload))
+    return json.loads(base64.urlsafe_b64decode(partie_payload))
 
 
 def is_token_valid(token: str | None = None) -> bool:
@@ -164,7 +171,9 @@ def is_token_valid(token: str | None = None) -> bool:
         date_expiration = _decoder_payload_token(token).get("exp", 0)
         return time.time() < date_expiration
     except Exception:
-        # Token malformé → invalide
+        # Token malformé → invalide. Loggué pour ne pas masquer silencieusement
+        # un échec de décodage réel (ex. bug base64 non-urlsafe corrigé ici).
+        logger.warning("Échec du décodage du token JWT (is_token_valid)", exc_info=True)
         return False
 
 
@@ -177,6 +186,9 @@ def obtenir_role(token: str) -> str:
     try:
         return _decoder_payload_token(token).get("role", "agriculteur")
     except Exception:
+        # Échec de décodage réel (token malformé) : retour par défaut loggué,
+        # pas silencieux — pour qu'un futur bug de ce type reste visible.
+        logger.warning("Échec du décodage du token JWT (obtenir_role)", exc_info=True)
         return "agriculteur"
 
 
