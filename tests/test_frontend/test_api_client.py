@@ -25,14 +25,13 @@ from unittest.mock import MagicMock, patch
 
 import jwt
 import pytest
-
 from tomatoscan.front.utils.api_client import (
     ApiError,
     API_URL,
     _decoder_payload_token,
     is_token_valid,
     login,
-    obtenir_role,
+    me,
     predict,
 )
 
@@ -98,6 +97,33 @@ class TestLogin:
 
         with pytest.raises(ApiError):
             login("admin", "motdepasse123")
+
+
+class TestSessionCourante:
+    """GET /auth/me — récupère la session validée côté serveur."""
+
+    @patch("tomatoscan.front.utils.api_client.requests.get")
+    def test_me_retourne_username_et_role_valides(self, mock_get):
+        mock_get.return_value = _reponse_mock(
+            200, {"username": "admin_test", "role": "admin"}
+        )
+
+        session_courante = me("mon.token.valide")
+
+        assert session_courante == {"username": "admin_test", "role": "admin"}
+
+    @patch("tomatoscan.front.utils.api_client.requests.get")
+    def test_me_envoie_le_header_authorization_correct(self, mock_get):
+        mock_get.return_value = _reponse_mock(
+            200, {"username": "admin_test", "role": "admin"}
+        )
+
+        me("mon.token.valide")
+
+        mock_get.assert_called_once()
+        args, kwargs = mock_get.call_args
+        assert args[0] == f"{API_URL}/auth/me"
+        assert kwargs["headers"] == {"Authorization": "Bearer mon.token.valide"}
 
 
 # --- Tâches 2 et 4 : POST /predict avec token valide + format de réponse -----------
@@ -325,15 +351,6 @@ class TestDecodageJWTPyJWT:
 
         assert decode == self.PAYLOAD_DECLENCHEUR
 
-    def test_obtenir_role_lit_le_bon_role_meme_avec_ce_payload_a_risque(self):
-        """Test de bout en bout via la fonction publique réellement utilisée
-        par les pages Streamlit : le rôle doit être lu correctement, pas
-        retomber sur le défaut "agriculteur" à cause d'un échec de décodage
-        masqué."""
-        token = _fabriquer_jwt(self.PAYLOAD_DECLENCHEUR)
-
-        assert obtenir_role(token) == "admin"
-
     def test_is_token_valid_lit_correctement_l_expiration_avec_ce_payload(self):
         """Même vérification pour is_token_valid() (exp très éloignée → valide).
         Vérifie aussi que jwt.decode(options={"verify_signature": False}) ne
@@ -353,37 +370,3 @@ class TestDecodageJWTPyJWT:
         token = _fabriquer_jwt({"sub": "x", "role": "admin", "exp": 1})
 
         assert is_token_valid(token) is False
-
-    def test_obtenir_role_retombe_sur_le_defaut_si_le_token_est_vraiment_malforme(
-        self,
-    ):
-        """Non-régression : un token réellement invalide (pas seulement un
-        payload contenant '-'/'_') doit toujours retomber sur "agriculteur",
-        sans lever d'exception jusqu'à la page appelante."""
-        assert obtenir_role("token.invalide.non-base64") == "agriculteur"
-
-
-class TestRoleJamaisStockeSepare:
-    """Preuve, côté api_client, que obtenir_role() est une fonction pure du
-    token — appelée deux fois avec le même token, elle renvoie toujours le
-    même résultat, et deux tokens différents (même émis à quelques instants
-    d'écart, seul "role" changeant) ne peuvent jamais donner le même rôle
-    par accident. Complète tests/test_frontend/test_navigation_role.py, qui
-    vérifie la même propriété au niveau de l'UI (session_state ne contient
-    jamais la clé "role")."""
-
-    def test_obtenir_role_est_deterministe_pour_un_meme_token(self):
-        token = _fabriquer_jwt({"sub": "x", "role": "admin", "exp": 9_999_999_999})
-
-        assert obtenir_role(token) == obtenir_role(token) == "admin"
-
-    def test_deux_tokens_de_roles_differents_donnent_des_roles_differents(self):
-        token_admin = _fabriquer_jwt(
-            {"sub": "x", "role": "admin", "exp": 9_999_999_999}
-        )
-        token_agriculteur = _fabriquer_jwt(
-            {"sub": "x", "role": "agriculteur", "exp": 9_999_999_999}
-        )
-
-        assert obtenir_role(token_admin) == "admin"
-        assert obtenir_role(token_agriculteur) == "agriculteur"

@@ -50,11 +50,12 @@ with centre:
                     # Spinner pendant l'appel réseau pour indiquer la progression
                     with st.spinner("Connexion en cours…"):
                         token = api_client.login(nom_utilisateur, mot_de_passe)
+                        session_courante = api_client.me(token)
                     st.session_state.token = token
-                    st.session_state.username = nom_utilisateur
-                    # Le rôle n'est jamais stocké séparément : il est recalculé à
-                    # la demande depuis le token (api_client.obtenir_role), pour
-                    # qu'il ne puisse structurellement pas se désynchroniser du token.
+                    st.session_state.username = session_courante["username"]
+                    # Le rôle est figé une fois au login dans la session, puis
+                    # réutilisé par la navigation et les pages protégées.
+                    st.session_state.role = session_courante["role"]
                     # Redirection vers la navigation principale
                     st.rerun()
                 except ApiError as erreur:
