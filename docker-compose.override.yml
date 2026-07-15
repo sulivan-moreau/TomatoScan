@@ -1,28 +1,67 @@
-# Docker Compose override — environnement préprod / développement local
+# Docker Compose override — environnement préprod (develop)
 #
 # Chargé automatiquement par "docker compose up" (pas besoin de -f).
-# Remplace la configuration PostgreSQL de docker-compose.yml par SQLite local.
+#
+# PostgreSQL en préprod comme en prod (issue migration async) : service et volume
+# distincts de la prod (postgres_preprod / postgres_donnees_preprod), pour ne
+# jamais partager de données entre les deux environnements. Les credentials
+# (POSTGRES_DB/USER/PASSWORD) réutilisent les mêmes noms de variable que la prod
+# — comme pour SECRET_KEY/ADMIN_USERNAME déjà — car chaque app Coolify (develop
+# et main) a son propre fichier .env avec ses propres valeurs ; seul le nom du
+# service et celui du volume doivent être distincts pour éviter toute collision
+# sur le réseau externe "coolify", partagé entre les deux stacks.
 #
 # Différences avec la production :
-#   - SQLite fichier local (pas de service postgres)
+#   - postgres_preprod (ce fichier) au lieu de postgres (docker-compose.yml)
 #   - APP_ENV=development (logs plus verbeux, rechargement automatique uvicorn)
 #
-# Pour lancer en mode production uniquement (PostgreSQL, ignorer ce fichier) :
+# Pour lancer en mode production uniquement (ignorer ce fichier) :
 #   docker compose -f docker-compose.yml up
 
 services:
 
-  # ─── Override de l'API : SQLite à la place de PostgreSQL ─────────────────────
+  # ─── Override de l'API : PostgreSQL préprod + rechargement auto ──────────────
   api:
     environment:
-      # Remplace DATABASE_URL définie dans .env → SQLite local, pas de service postgres requis
-      DATABASE_URL: sqlite:///./tomatoscan_preprod.db
+      # postgresql+asyncpg:// — cohérent avec create_async_engine (moteur async,
+      # voir database/connexion.py). Hostname "postgres_preprod" = le service
+      # ci-dessous, pas "postgres" (celui de docker-compose.yml, désactivé plus
+      # bas pour cette stack).
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_preprod:5432/${POSTGRES_DB}
       # Signale à l'application qu'elle tourne en mode développement (APP_ENV lu par main.py)
       APP_ENV: development
+    depends_on:
+      postgres_preprod:
+        condition: service_healthy
 
-  # ─── PostgreSQL désactivé en préprod ─────────────────────────────────────────
-  # Le profil "production_only" empêche le démarrage automatique du service.
-  # "docker compose up" ne démarrera pas postgres, l'API utilisera SQLite.
+  # ─── PostgreSQL de docker-compose.yml désactivé pour cette stack ─────────────
+  # Le profil "production_only" empêche son démarrage automatique ici — cette
+  # stack (develop) utilise postgres_preprod ci-dessous, jamais ce service-là.
   postgres:
     profiles:
       - production_only
+
+  # ─── PostgreSQL préprod — base et volume dédiés, séparés de la prod ──────────
+  postgres_preprod:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_donnees_preprod:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready vérifie que PostgreSQL accepte les connexions
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - coolify
+
+volumes:
+  # Volume nommé distinct de postgres_donnees (prod, docker-compose.yml) —
+  # aucune donnée partagée entre préprod et prod.
+  postgres_donnees_preprod:

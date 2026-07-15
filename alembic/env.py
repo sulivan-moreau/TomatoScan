@@ -1,9 +1,12 @@
 # Configuration Alembic — pointe sur Base.metadata et lit DATABASE_URL depuis .env
+import asyncio
 import os
 from logging.config import fileConfig
 
 from dotenv import load_dotenv
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
@@ -16,6 +19,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Injection de DATABASE_URL depuis l'environnement — remplace la valeur de alembic.ini
+# Schéma attendu : postgresql+asyncpg://... (moteur async, cohérent avec
+# database/connexion.py — voir la migration vers create_async_engine).
 url_bdd = os.getenv("DATABASE_URL", "")
 config.set_main_option("sqlalchemy.url", url_bdd)
 
@@ -39,21 +44,38 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    """Mode en-ligne : se connecte à la BDD et applique les migrations."""
-    connecteur = engine_from_config(
+def _executer_migrations(connexion: Connection) -> None:
+    """Partie synchrone partagée : configure le contexte Alembic sur une
+    connexion déjà établie et applique les migrations. Appelée via
+    AsyncConnection.run_sync() — Alembic lui-même (parcours des révisions,
+    diff de schéma) reste une bibliothèque synchrone, seul l'établissement
+    de la connexion est asynchrone (asyncpg).
+    """
+    context.configure(connection=connexion, target_metadata=target_metadata)
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_migrations_online() -> None:
+    """Mode en-ligne : se connecte à la BDD (async) et applique les migrations.
+
+    Pattern standard Alembic pour un moteur asynchrone : async_engine_from_config
+    + AsyncConnection.run_sync(), puisque le moteur d'exécution des migrations
+    d'Alembic est lui-même synchrone.
+    """
+    connecteur = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    with connecteur.connect() as connexion:
-        # Paramètre nommé "connection" imposé par l'API Alembic
-        context.configure(connection=connexion, target_metadata=target_metadata)
-        with context.begin_transaction():
-            context.run_migrations()
+
+    async with connecteur.connect() as connexion:
+        await connexion.run_sync(_executer_migrations)
+
+    await connecteur.dispose()
 
 
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online()
+    asyncio.run(run_migrations_online())

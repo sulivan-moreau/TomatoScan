@@ -4,7 +4,8 @@ Route POST /auth/token — authentification par identifiants, retourne un token 
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from tomatoscan.api.core.limiter import limiteur
 from tomatoscan.api.core.security import creer_token_acces, verifier_mot_de_passe
@@ -28,10 +29,10 @@ router = APIRouter(prefix="/auth", tags=["Authentification"])
     },
 )
 @limiteur.limit("5/minute")
-def connexion(
+async def connexion(
     request: Request,
     credentials: LoginRequest,
-    session: Session = Depends(obtenir_session),
+    session: AsyncSession = Depends(obtenir_session),
 ) -> TokenResponse:
     """
     Authentifie un utilisateur et retourne un token JWT Bearer.
@@ -57,7 +58,10 @@ def connexion(
     - Token valide pour la durée définie dans `ACCESS_TOKEN_EXPIRE_MINUTES` (.env, défaut 30 min)
     - **Limité à 5 requêtes par minute** par IP (protection brute-force, OWASP API4)
     """
-    utilisateur = session.query(User).filter_by(username=credentials.username).first()
+    resultat = await session.execute(
+        select(User).filter_by(username=credentials.username)
+    )
+    utilisateur = resultat.scalar_one_or_none()
 
     # Vérification des identifiants — comparaison en temps constant évitée volontairement
     # car ce projet est monocompte/multi-agriculteurs et ne nécessite pas de protection

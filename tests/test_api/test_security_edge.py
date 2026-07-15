@@ -10,26 +10,22 @@ import os
 import time
 
 import pytest
-from fastapi.testclient import TestClient
 from jose import jwt
 
 from tomatoscan.api.core.security import creer_token_acces
-from tomatoscan.api.main import app
 
 NOM_ADMIN = os.getenv("ADMIN_USERNAME", "admin_test")
 MOT_DE_PASSE_ADMIN = os.getenv("ADMIN_PASSWORD", "motdepasse_test_123")
 
-client = TestClient(app)
 
-
-def test_token_sans_secret_key(monkeypatch):
+async def test_token_sans_secret_key(monkeypatch, client):
     """SECRET_KEY absente → comportement sécurisé sur les deux chemins critiques.
 
     - Validation d'un token existant : obtenir_utilisateur_courant() retourne 401 (lignes 60-61)
     - Création d'un nouveau token : creer_token_acces() lève RuntimeError (lignes 33-34)
     """
     # Obtenir un token valide pendant que SECRET_KEY est encore présente
-    reponse = client.post(
+    reponse = await client.post(
         "/auth/token",
         json={"username": NOM_ADMIN, "password": MOT_DE_PASSE_ADMIN},
     )
@@ -39,19 +35,19 @@ def test_token_sans_secret_key(monkeypatch):
     monkeypatch.delenv("SECRET_KEY")
 
     # Avec SECRET_KEY absente, un token existant ne peut plus être validé → 401 (lignes 60-61)
-    reponse_protege = client.get(
+    reponse_protege = await client.get(
         "/predictions/history",
         headers={"Authorization": f"Bearer {token_existant}"},
     )
     assert reponse_protege.status_code == 401
 
     # Avec SECRET_KEY absente, creer_token_acces() lève RuntimeError (lignes 33-34)
-    # Appel direct à la fonction pour tester ce chemin sans passer par le TestClient
+    # Appel direct à la fonction pour tester ce chemin sans passer par le client HTTP
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         creer_token_acces({"sub": "utilisateur_test"})
 
 
-def test_token_sans_sub():
+async def test_token_sans_sub(client):
     """JWT signé avec une clé valide mais sans le champ 'sub' → 401.
 
     Couvre security.py ligne 67 : if nom_utilisateur is None: raise erreur_401
@@ -67,7 +63,7 @@ def test_token_sans_sub():
     )
 
     # L'endpoint protégé doit rejeter ce token : 'sub' absent → nom_utilisateur est None → 401
-    reponse = client.get(
+    reponse = await client.get(
         "/predictions/history",
         headers={"Authorization": f"Bearer {token_sans_sub}"},
     )

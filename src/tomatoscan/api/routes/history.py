@@ -7,7 +7,8 @@ Authentification JWT Bearer requise.
 
 from fastapi import APIRouter, Depends
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from tomatoscan.api.core.security import (
     obtenir_role_courant,
@@ -25,10 +26,10 @@ router = APIRouter(tags=["Historique"])
     response_model=list[HistoryItem],
     responses={401: {"description": "Token invalide, expiré ou absent."}},
 )
-def obtenir_historique(
+async def obtenir_historique(
     nom_utilisateur: str = Depends(obtenir_utilisateur_courant),
     role: str = Depends(obtenir_role_courant),
-    session: Session = Depends(obtenir_session),
+    session: AsyncSession = Depends(obtenir_session),
 ) -> list[HistoryItem]:
     """Retourne l'historique des prédictions, trié par date décroissante.
 
@@ -37,13 +38,14 @@ def obtenir_historique(
     une liste vide.
     """
     try:
-        requete = session.query(Prediction)
+        requete = select(Prediction)
 
         if role != "admin":
             # Recherche de l'utilisateur dans la BDD par son nom
-            utilisateur = (
-                session.query(User).filter_by(username=nom_utilisateur).first()
+            resultat_utilisateur = await session.execute(
+                select(User).filter_by(username=nom_utilisateur)
             )
+            utilisateur = resultat_utilisateur.scalar_one_or_none()
             if utilisateur is None:
                 # Aucun enregistrement BDD pour cet utilisateur — liste vide
                 logger.debug(
@@ -53,7 +55,8 @@ def obtenir_historique(
             requete = requete.filter_by(user_id=utilisateur.id)
 
         # Récupération des prédictions triées par date décroissante (la plus récente en premier)
-        predictions = requete.order_by(Prediction.created_at.desc()).all()
+        resultat = await session.execute(requete.order_by(Prediction.created_at.desc()))
+        predictions = resultat.scalars().all()
         logger.debug(
             f"{len(predictions)} prédiction(s) trouvée(s) pour {nom_utilisateur!r} (rôle : {role})."
         )

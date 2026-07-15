@@ -10,11 +10,7 @@ import io
 import os
 from unittest.mock import patch
 
-import pytest
-from fastapi.testclient import TestClient
 from PIL import Image
-
-from tomatoscan.api.main import app
 
 NOM_ADMIN = os.getenv("ADMIN_USERNAME", "admin_test")
 MOT_DE_PASSE_ADMIN = os.getenv("ADMIN_PASSWORD", "motdepasse_test_123")
@@ -23,12 +19,10 @@ MOT_DE_PASSE_ADMIN = os.getenv("ADMIN_PASSWORD", "motdepasse_test_123")
 _PREDIRE = "tomatoscan.api.routes.predict.model_service.predire"
 _DISPONIBLE = "tomatoscan.api.routes.predict.model_service.modele_disponible"
 
-client = TestClient(app)
 
-
-def _obtenir_token_valide() -> str:
+async def _obtenir_token_valide(client) -> str:
     """Authentifie l'admin de test et retourne un token JWT valide."""
-    reponse = client.post(
+    reponse = await client.post(
         "/auth/token",
         json={"username": NOM_ADMIN, "password": MOT_DE_PASSE_ADMIN},
     )
@@ -44,16 +38,16 @@ def _creer_image_jpg() -> bytes:
     return buffer.getvalue()
 
 
-def test_history_sans_token():
+async def test_history_sans_token(client):
     """GET /predictions/history sans token d'authentification doit retourner 401."""
-    reponse = client.get("/predictions/history")
+    reponse = await client.get("/predictions/history")
     assert reponse.status_code == 401
 
 
-def test_history_avec_token():
+async def test_history_avec_token(client):
     """GET /predictions/history avec un token valide doit retourner 200 et une liste vide."""
-    token = _obtenir_token_valide()
-    reponse = client.get(
+    token = await _obtenir_token_valide(client)
+    reponse = await client.get(
         "/predictions/history",
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -66,16 +60,16 @@ def test_history_avec_token():
 
 @patch(_PREDIRE, return_value=("Tomato_healthy", 0.99))
 @patch(_DISPONIBLE, return_value=True)
-def test_history_apres_prediction(mock_dispo, mock_predire):
+async def test_history_apres_prediction(mock_dispo, mock_predire, client):
     """Vérifie que GET /predictions/history retourne la prédiction sauvegardée après un POST /predict.
 
     Teste le chemin complet : prédiction → sauvegarde BDD → récupération historique.
     Couvre les lignes de history.py qui interrogent réellement la BDD (utilisateur + requête).
     """
-    token = _obtenir_token_valide()
+    token = await _obtenir_token_valide(client)
 
     # Soumission d'une prédiction via POST /predict (modèle mocké — aucun checkpoint requis)
-    reponse_predict = client.post(
+    reponse_predict = await client.post(
         "/predict",
         headers={"Authorization": f"Bearer {token}"},
         files={"fichier": ("feuille_historique.jpg", _creer_image_jpg(), "image/jpeg")},
@@ -83,7 +77,7 @@ def test_history_apres_prediction(mock_dispo, mock_predire):
     assert reponse_predict.status_code == 200
 
     # Vérification que la prédiction apparaît dans l'historique
-    reponse_historique = client.get(
+    reponse_historique = await client.get(
         "/predictions/history",
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -103,19 +97,22 @@ def test_history_apres_prediction(mock_dispo, mock_predire):
 
 @patch(_PREDIRE, return_value=("Tomato_healthy", 0.99))
 @patch(_DISPONIBLE, return_value=True)
-def test_history_filtree_par_role(mock_dispo, mock_predire):
+async def test_history_filtree_par_role(mock_dispo, mock_predire, client):
     """Un agriculteur ne voit que ses prédictions, un admin voit celles de tous les utilisateurs."""
-    token_admin = _obtenir_token_valide()
+    token_admin = await _obtenir_token_valide(client)
 
     # Création d'un compte agriculteur dédié à ce test (via la route admin)
-    reponse_creation = client.post(
+    reponse_creation = await client.post(
         "/users",
         headers={"Authorization": f"Bearer {token_admin}"},
-        json={"username": "agriculteur_historique", "password": "motdepasse_agri_456"},
+        json={
+            "username": "agriculteur_historique",
+            "password": "motdepasse_agri_456",
+        },
     )
     assert reponse_creation.status_code == 201, reponse_creation.text
 
-    reponse_login_agri = client.post(
+    reponse_login_agri = await client.post(
         "/auth/token",
         json={"username": "agriculteur_historique", "password": "motdepasse_agri_456"},
     )
@@ -123,7 +120,7 @@ def test_history_filtree_par_role(mock_dispo, mock_predire):
     token_agri = reponse_login_agri.json()["access_token"]
 
     # L'agriculteur soumet une prédiction
-    reponse_predict = client.post(
+    reponse_predict = await client.post(
         "/predict",
         headers={"Authorization": f"Bearer {token_agri}"},
         files={"fichier": ("feuille_agri.jpg", _creer_image_jpg(), "image/jpeg")},
@@ -131,15 +128,17 @@ def test_history_filtree_par_role(mock_dispo, mock_predire):
     assert reponse_predict.status_code == 200
 
     # L'agriculteur ne voit que sa propre prédiction (compte flambant neuf)
-    historique_agri = client.get(
+    reponse_historique_agri = await client.get(
         "/predictions/history", headers={"Authorization": f"Bearer {token_agri}"}
-    ).json()
+    )
+    historique_agri = reponse_historique_agri.json()
     assert len(historique_agri) == 1
     assert historique_agri[0]["nom_fichier"] == "feuille_agri.jpg"
 
     # L'admin voit l'historique complet, y compris la prédiction de l'agriculteur
-    historique_admin = client.get(
+    reponse_historique_admin = await client.get(
         "/predictions/history", headers={"Authorization": f"Bearer {token_admin}"}
-    ).json()
+    )
+    historique_admin = reponse_historique_admin.json()
     fichiers_admin = [entree["nom_fichier"] for entree in historique_admin]
     assert "feuille_agri.jpg" in fichiers_admin

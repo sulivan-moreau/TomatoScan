@@ -13,16 +13,11 @@ import os
 import uuid
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
 from PIL import Image
-
-from tomatoscan.api.main import app
 
 # Chemins de mock — identiques à test_history.py/test_predict.py pour la cohérence
 _PREDIRE = "tomatoscan.api.routes.predict.model_service.predire"
 _DISPONIBLE = "tomatoscan.api.routes.predict.model_service.modele_disponible"
-
-client = TestClient(app)
 
 NOM_ADMIN = os.getenv("ADMIN_USERNAME", "admin_test")
 MOT_DE_PASSE_ADMIN = os.getenv("ADMIN_PASSWORD", "motdepasse_test_123")
@@ -36,9 +31,9 @@ def _creer_image_jpg() -> bytes:
     return buffer.getvalue()
 
 
-def _token_admin() -> str:
+async def _token_admin(client) -> str:
     """Authentifie l'admin de test et retourne un token JWT valide."""
-    reponse = client.post(
+    reponse = await client.post(
         "/auth/token", json={"username": NOM_ADMIN, "password": MOT_DE_PASSE_ADMIN}
     )
     assert reponse.status_code == 200, (
@@ -47,11 +42,11 @@ def _token_admin() -> str:
     return reponse.json()["access_token"]
 
 
-def _creer_agriculteur(
-    token_admin: str, username: str, password: str = "motdepasse_agri_123"
+async def _creer_agriculteur(
+    client, token_admin: str, username: str, password: str = "motdepasse_agri_123"
 ) -> dict:
     """Crée un compte agriculteur via l'API et retourne le corps de la réponse."""
-    reponse = client.post(
+    reponse = await client.post(
         "/users",
         headers={"Authorization": f"Bearer {token_admin}"},
         json={"username": username, "password": password},
@@ -60,9 +55,11 @@ def _creer_agriculteur(
     return reponse.json()
 
 
-def _token_agriculteur(username: str, password: str = "motdepasse_agri_123") -> str:
+async def _token_agriculteur(
+    client, username: str, password: str = "motdepasse_agri_123"
+) -> str:
     """Authentifie un compte agriculteur et retourne son token JWT."""
-    reponse = client.post(
+    reponse = await client.post(
         "/auth/token", json={"username": username, "password": password}
     )
     assert reponse.status_code == 200, (
@@ -71,54 +68,58 @@ def _token_agriculteur(username: str, password: str = "motdepasse_agri_123") -> 
     return reponse.json()["access_token"]
 
 
-def test_agriculteur_recoit_403_sur_toutes_les_routes_users():
+async def test_agriculteur_recoit_403_sur_toutes_les_routes_users(client):
     """Un compte agriculteur ne doit avoir accès à aucune route /users."""
-    token_admin = _token_admin()
-    _creer_agriculteur(token_admin, "agriculteur_403")
-    token_agri = _token_agriculteur("agriculteur_403")
+    token_admin = await _token_admin(client)
+    await _creer_agriculteur(client, token_admin, "agriculteur_403")
+    token_agri = await _token_agriculteur(client, "agriculteur_403")
     entetes = {"Authorization": f"Bearer {token_agri}"}
 
-    assert client.get("/users", headers=entetes).status_code == 403
-    reponse_post = client.post(
+    assert (await client.get("/users", headers=entetes)).status_code == 403
+    reponse_post = await client.post(
         "/users", headers=entetes, json={"username": "x", "password": "y"}
     )
     assert reponse_post.status_code == 403
     # UUID syntaxiquement valide mais inexistant : le rôle est vérifié avant toute
     # recherche en BDD, donc peu importe qu'il corresponde à un compte réel.
-    assert client.delete(f"/users/{uuid.uuid4()}", headers=entetes).status_code == 403
+    reponse_delete = await client.delete(f"/users/{uuid.uuid4()}", headers=entetes)
+    assert reponse_delete.status_code == 403
 
 
-def test_admin_peut_lister_creer_et_supprimer_des_utilisateurs():
+async def test_admin_peut_lister_creer_et_supprimer_des_utilisateurs(client):
     """Cycle complet admin : création, présence dans la liste, suppression."""
-    token_admin = _token_admin()
+    token_admin = await _token_admin(client)
     entetes = {"Authorization": f"Bearer {token_admin}"}
 
-    utilisateur = _creer_agriculteur(token_admin, "agriculteur_cycle_complet")
+    utilisateur = await _creer_agriculteur(
+        client, token_admin, "agriculteur_cycle_complet"
+    )
     assert utilisateur["role"] == "agriculteur"
     assert "hashed_password" not in utilisateur
     assert "password" not in utilisateur
 
-    reponse_liste = client.get("/users", headers=entetes)
+    reponse_liste = await client.get("/users", headers=entetes)
     assert reponse_liste.status_code == 200
     usernames = [u["username"] for u in reponse_liste.json()]
     assert "agriculteur_cycle_complet" in usernames
 
-    reponse_suppression = client.delete(f"/users/{utilisateur['id']}", headers=entetes)
+    reponse_suppression = await client.delete(
+        f"/users/{utilisateur['id']}", headers=entetes
+    )
     assert reponse_suppression.status_code == 204
 
     # L'utilisateur supprimé ne doit plus apparaître dans la liste
-    usernames_apres = [
-        u["username"] for u in client.get("/users", headers=entetes).json()
-    ]
+    reponse_apres = await client.get("/users", headers=entetes)
+    usernames_apres = [u["username"] for u in reponse_apres.json()]
     assert "agriculteur_cycle_complet" not in usernames_apres
 
 
-def test_creation_avec_username_deja_pris_retourne_409():
+async def test_creation_avec_username_deja_pris_retourne_409(client):
     """Créer deux comptes avec le même username doit échouer sur le second."""
-    token_admin = _token_admin()
-    _creer_agriculteur(token_admin, "agriculteur_doublon")
+    token_admin = await _token_admin(client)
+    await _creer_agriculteur(client, token_admin, "agriculteur_doublon")
 
-    reponse = client.post(
+    reponse = await client.post(
         "/users",
         headers={"Authorization": f"Bearer {token_admin}"},
         json={"username": "agriculteur_doublon", "password": "autre_mdp"},
@@ -126,32 +127,33 @@ def test_creation_avec_username_deja_pris_retourne_409():
     assert reponse.status_code == 409
 
 
-def test_admin_ne_peut_pas_se_supprimer_lui_meme():
+async def test_admin_ne_peut_pas_se_supprimer_lui_meme(client):
     """DELETE /users/{id} sur son propre compte admin doit retourner 400."""
-    token_admin = _token_admin()
+    token_admin = await _token_admin(client)
     entetes = {"Authorization": f"Bearer {token_admin}"}
 
-    mon_id = next(
-        u["id"]
-        for u in client.get("/users", headers=entetes).json()
-        if u["username"] == NOM_ADMIN
-    )
+    reponse_liste = await client.get("/users", headers=entetes)
+    mon_id = next(u["id"] for u in reponse_liste.json() if u["username"] == NOM_ADMIN)
 
-    reponse = client.delete(f"/users/{mon_id}", headers=entetes)
+    reponse = await client.delete(f"/users/{mon_id}", headers=entetes)
     assert reponse.status_code == 400
 
 
 @patch(_PREDIRE, return_value=("Tomato_healthy", 0.99))
 @patch(_DISPONIBLE, return_value=True)
-def test_suppression_bloquee_si_utilisateur_a_des_predictions(mock_dispo, mock_predire):
+async def test_suppression_bloquee_si_utilisateur_a_des_predictions(
+    mock_dispo, mock_predire, client
+):
     """DELETE /users/{id} doit retourner 409 si l'utilisateur a des prédictions enregistrées,
     et l'utilisateur ne doit pas être supprimé de la base dans ce cas."""
-    token_admin = _token_admin()
-    utilisateur = _creer_agriculteur(token_admin, "agriculteur_avec_predictions")
-    token_agri = _token_agriculteur("agriculteur_avec_predictions")
+    token_admin = await _token_admin(client)
+    utilisateur = await _creer_agriculteur(
+        client, token_admin, "agriculteur_avec_predictions"
+    )
+    token_agri = await _token_agriculteur(client, "agriculteur_avec_predictions")
 
     # L'agriculteur soumet une prédiction (modèle mocké — aucun checkpoint requis)
-    reponse_predict = client.post(
+    reponse_predict = await client.post(
         "/predict",
         headers={"Authorization": f"Bearer {token_agri}"},
         files={
@@ -166,14 +168,13 @@ def test_suppression_bloquee_si_utilisateur_a_des_predictions(mock_dispo, mock_p
 
     # La suppression doit être refusée tant que des prédictions sont liées à ce compte
     entetes_admin = {"Authorization": f"Bearer {token_admin}"}
-    reponse_suppression = client.delete(
+    reponse_suppression = await client.delete(
         f"/users/{utilisateur['id']}", headers=entetes_admin
     )
     assert reponse_suppression.status_code == 409
     assert "prédiction" in reponse_suppression.json()["detail"].lower()
 
     # L'utilisateur doit toujours exister en base après la tentative refusée
-    usernames = [
-        u["username"] for u in client.get("/users", headers=entetes_admin).json()
-    ]
+    reponse_liste = await client.get("/users", headers=entetes_admin)
+    usernames = [u["username"] for u in reponse_liste.json()]
     assert "agriculteur_avec_predictions" in usernames

@@ -3,14 +3,14 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from prometheus_client import make_asgi_app
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from slowapi.middleware import SlowAPIASGIMiddleware
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from tomatoscan.api.core.limiter import gestionnaire_limite_atteinte, limiteur
 from tomatoscan.api.routes.auth import router as auth_router
@@ -27,16 +27,37 @@ from tomatoscan.database.connexion import Base, SessionLocal, moteur
 load_dotenv()
 
 
-class EnteteSecuriteMiddleware(BaseHTTPMiddleware):
-    """Ajoute des headers de sécurité HTTP sur chaque réponse (OWASP API7)."""
+class EnteteSecuriteMiddleware:
+    """Ajoute des headers de sécurité HTTP sur chaque réponse (OWASP API7).
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        """Injecte X-Content-Type-Options, X-Frame-Options et X-XSS-Protection."""
-        reponse = await call_next(request)
-        reponse.headers["X-Content-Type-Options"] = "nosniff"
-        reponse.headers["X-Frame-Options"] = "DENY"
-        reponse.headers["X-XSS-Protection"] = "1; mode=block"
-        return reponse
+    Middleware ASGI pur (scope/receive/send), pas BaseHTTPMiddleware : ce dernier
+    exécute la suite de la requête dans une tâche anyio distincte de celle de la
+    requête entrante (via son call_next interne), ce qui casse asyncpg dès qu'une
+    route en aval ouvre une connexion PostgreSQL — RuntimeError "Future ...
+    attached to a different loop" (incompatibilité connue Starlette
+    BaseHTTPMiddleware / asyncpg). Le pattern ASGI pur ci-dessous reste dans la
+    tâche d'origine : il intercepte le message "http.response.start" envoyé par
+    l'application pour y ajouter les headers, sans tâche séparée.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Enveloppe `send` pour injecter les headers avant l'envoi de la réponse."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def envoyer_avec_entetes(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                entetes = MutableHeaders(scope=message)
+                entetes["X-Content-Type-Options"] = "nosniff"
+                entetes["X-Frame-Options"] = "DENY"
+                entetes["X-XSS-Protection"] = "1; mode=block"
+            await send(message)
+
+        await self.app(scope, receive, envoyer_avec_entetes)
 
 
 def _lire_cors_origins() -> list[str]:
@@ -52,12 +73,15 @@ async def lifespan(app: FastAPI):
     env = os.getenv("APP_ENV", "development")
     logger.info(f"TomatoScan API démarrée — environnement : {env}")
     logger.info("Variables d'environnement chargées depuis .env")
-    # Création des tables BDD si elles n'existent pas encore (idempotent)
-    Base.metadata.create_all(moteur)
+    # Création des tables BDD si elles n'existent pas encore (idempotent) — run_sync
+    # exécute l'appel Base.metadata.create_all (synchrone, API Core) sur la connexion
+    # asynchrone, seul moyen standard de mélanger les deux ici.
+    async with moteur.begin() as connexion:
+        await connexion.run_sync(Base.metadata.create_all)
     logger.info("Tables BDD initialisées.")
     # Garantit qu'un compte admin (role="admin", mot de passe hashé) existe en BDD
-    with SessionLocal() as session:
-        bootstrap_admin(session)
+    async with SessionLocal() as session:
+        await bootstrap_admin(session)
     # Chargement unique du modèle au démarrage
     model_service.initialiser_modele()
     yield
@@ -129,13 +153,18 @@ app = FastAPI(
     openapi_tags=_TAGS_METADATA,
 )
 
-# Rate limiter — l'instance doit être dans app.state pour que SlowAPIMiddleware la trouve
+# Rate limiter — l'instance doit être dans app.state pour que SlowAPIASGIMiddleware la trouve
 app.state.limiter = limiteur
 # Réponse 429 en JSON custom (gestionnaire_limite_atteinte) au lieu du texte brut slowapi
 app.add_exception_handler(RateLimitExceeded, gestionnaire_limite_atteinte)
 
 # Middlewares — ajoutés du plus interne au plus externe (dernier ajouté = premier exécuté)
-app.add_middleware(SlowAPIMiddleware)
+# SlowAPIASGIMiddleware (ASGI pur, fourni par slowapi) plutôt que SlowAPIMiddleware
+# (héritait de BaseHTTPMiddleware — même incompatibilité asyncpg "attached to a
+# different loop" que EnteteSecuriteMiddleware, corrigée séparément ci-dessous).
+# Ajouté et lu de façon identique (app.add_middleware), même gestionnaire d'exception,
+# mêmes limites par route (@limiteur.limit(...)) — comportement inchangé.
+app.add_middleware(SlowAPIASGIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_lire_cors_origins(),

@@ -1,7 +1,7 @@
 # Docker Compose — configuration production TomatoScan
 #
 # Déploiement Coolify sur VPS OVH :
-#   push sur develop → Coolify charge ce fichier + docker-compose.override.yml (préprod SQLite)
+#   push sur develop → Coolify charge ce fichier + docker-compose.override.yml (préprod PostgreSQL async)
 #   push sur main    → Coolify charge ce fichier seul (prod PostgreSQL)
 #
 # Prérequis avant le premier déploiement :
