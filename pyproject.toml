@@ -76,4 +76,12 @@ asyncio_mode = "auto"
 # une connexion SQLite en mémoire partagée par tous les tests) doit rester sur la
 # même boucle asyncio du début à la fin, sinon aiosqlite lève "attached to a
 # different loop" dès le deuxième test.
+# asyncio_default_fixture_loop_scope règle la portée des fixtures async (client,
+# _preparer_bdd_test), mais pas celle des fonctions de test elles-mêmes — sans
+# asyncio_default_test_loop_scope, ces dernières restent sur une boucle "function"
+# différente de la boucle "session" des fixtures. aiosqlite tolère ce décalage,
+# asyncpg non ("attached to a different loop" dès qu'une route utilise une
+# connexion DB ouverte sur la boucle session depuis une coroutine de test sur une
+# boucle function) : les deux portées doivent donc être alignées sur "session".
 asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
