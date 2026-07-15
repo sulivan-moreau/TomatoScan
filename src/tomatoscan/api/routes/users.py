@@ -8,7 +8,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from tomatoscan.api.core.security import (
     hacher_mot_de_passe,
@@ -34,9 +35,12 @@ router = APIRouter(
 
 
 @router.get("", response_model=list[UserOut])
-def lister_utilisateurs(session: Session = Depends(obtenir_session)) -> list[User]:
+async def lister_utilisateurs(
+    session: AsyncSession = Depends(obtenir_session),
+) -> list[User]:
     """Liste tous les comptes utilisateurs (id, username, rôle, date de création)."""
-    return session.query(User).order_by(User.created_at.asc()).all()
+    resultat = await session.execute(select(User).order_by(User.created_at.asc()))
+    return list(resultat.scalars().all())
 
 
 @router.post(
@@ -45,15 +49,16 @@ def lister_utilisateurs(session: Session = Depends(obtenir_session)) -> list[Use
     status_code=status.HTTP_201_CREATED,
     responses={409: {"description": "Ce nom d'utilisateur est déjà utilisé."}},
 )
-def creer_utilisateur(
-    donnees: UserCreate, session: Session = Depends(obtenir_session)
+async def creer_utilisateur(
+    donnees: UserCreate, session: AsyncSession = Depends(obtenir_session)
 ) -> User:
     """Crée un compte agriculteur.
 
     Le rôle est toujours "agriculteur" : cette route ne permet pas de créer
     un autre compte admin, pour ne pas élargir la surface d'attaque.
     """
-    existant = session.query(User).filter_by(username=donnees.username).first()
+    resultat = await session.execute(select(User).filter_by(username=donnees.username))
+    existant = resultat.scalar_one_or_none()
     if existant is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -67,8 +72,8 @@ def creer_utilisateur(
         role="agriculteur",
     )
     session.add(utilisateur)
-    session.commit()
-    session.refresh(utilisateur)
+    await session.commit()
+    await session.refresh(utilisateur)
     logger.info(f"Compte agriculteur créé : {donnees.username!r}")
     return utilisateur
 
@@ -86,10 +91,10 @@ def creer_utilisateur(
         },
     },
 )
-def supprimer_utilisateur(
+async def supprimer_utilisateur(
     user_id: UUID,
     nom_admin: str = Depends(obtenir_utilisateur_courant),
-    session: Session = Depends(obtenir_session),
+    session: AsyncSession = Depends(obtenir_session),
 ) -> None:
     """Supprime un compte utilisateur.
 
@@ -99,7 +104,8 @@ def supprimer_utilisateur(
     CASCADE défini sur la contrainte, ce choix reste donc explicite et visible
     ici plutôt qu'implicite dans le schéma).
     """
-    utilisateur = session.query(User).filter_by(id=user_id).first()
+    resultat = await session.execute(select(User).filter_by(id=user_id))
+    utilisateur = resultat.scalar_one_or_none()
     if utilisateur is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable."
@@ -113,15 +119,16 @@ def supprimer_utilisateur(
             detail="Vous ne pouvez pas supprimer votre propre compte.",
         )
 
-    a_des_predictions = (
-        session.query(Prediction).filter_by(user_id=user_id).first() is not None
+    resultat_predictions = await session.execute(
+        select(Prediction).filter_by(user_id=user_id)
     )
+    a_des_predictions = resultat_predictions.scalar_one_or_none() is not None
     if a_des_predictions:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Impossible de supprimer un utilisateur ayant des prédictions enregistrées.",
         )
 
-    session.delete(utilisateur)
-    session.commit()
+    await session.delete(utilisateur)
+    await session.commit()
     logger.info(f"Compte {utilisateur.username!r} supprimé par {nom_admin!r}.")

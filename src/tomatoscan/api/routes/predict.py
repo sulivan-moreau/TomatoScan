@@ -7,10 +7,13 @@ pour constituer l'historique de l'utilisateur (Issue #32).
 
 import time
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from loguru import logger
 from PIL import UnidentifiedImageError
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from tomatoscan.api.core.security import obtenir_utilisateur_courant
 from tomatoscan.api.metrics import (
@@ -31,7 +34,7 @@ EXTENSIONS_ACCEPTEES = {".jpg", ".jpeg", ".png"}
 TAILLE_MAX_OCTETS = 5 * 1024 * 1024  # 5 Mo
 
 
-def _obtenir_ou_creer_user(nom_utilisateur: str, session: Session) -> int:
+async def _obtenir_ou_creer_user(nom_utilisateur: str, session: AsyncSession) -> UUID:
     """Retourne l'id de l'utilisateur en BDD, en créant un enregistrement minimal si absent.
 
     L'authentification est désormais vérifiée contre la table `users` (mot de
@@ -40,7 +43,8 @@ def _obtenir_ou_creer_user(nom_utilisateur: str, session: Session) -> int:
     un admin alors que son token JWT (encore valide jusqu'à expiration)
     continue d'être utilisé pour une prédiction.
     """
-    utilisateur = session.query(User).filter_by(username=nom_utilisateur).first()
+    resultat = await session.execute(select(User).filter_by(username=nom_utilisateur))
+    utilisateur = resultat.scalar_one_or_none()
     if utilisateur is None:
         utilisateur = User(
             username=nom_utilisateur,
@@ -48,7 +52,7 @@ def _obtenir_ou_creer_user(nom_utilisateur: str, session: Session) -> int:
             hashed_password="",
         )
         session.add(utilisateur)
-        session.flush()  # Génère l'id sans committer la transaction
+        await session.flush()  # Génère l'id sans committer la transaction
         logger.debug(f"Utilisateur {nom_utilisateur!r} créé en BDD pour l'historique.")
     return utilisateur.id
 
@@ -69,7 +73,7 @@ def _obtenir_ou_creer_user(nom_utilisateur: str, session: Session) -> int:
 async def predire_maladie(
     fichier: UploadFile = File(...),
     _utilisateur: str = Depends(obtenir_utilisateur_courant),
-    session: Session = Depends(obtenir_session),
+    session: AsyncSession = Depends(obtenir_session),
 ):
     """
     Analyse une image de feuille de tomate et retourne la maladie détectée par MobileNetV2.
@@ -153,7 +157,7 @@ async def predire_maladie(
 
     # Sauvegarde de la prédiction en BDD (non bloquante si la BDD est indisponible)
     try:
-        identifiant_user = _obtenir_ou_creer_user(_utilisateur, session)
+        identifiant_user = await _obtenir_ou_creer_user(_utilisateur, session)
         enregistrement = Prediction(
             user_id=identifiant_user,
             nom_fichier=nom,
@@ -161,14 +165,14 @@ async def predire_maladie(
             confiance=confiance,
         )
         session.add(enregistrement)
-        session.commit()
+        await session.commit()
         logger.info(
             f"Prédiction sauvegardée pour {_utilisateur!r} : {classe} ({confiance:.1%})"
         )
     except Exception as erreur_bdd:
         logger.warning(f"Sauvegarde BDD échouée (non bloquante) : {erreur_bdd}")
         try:
-            session.rollback()
+            await session.rollback()
         except Exception:
             pass
 
