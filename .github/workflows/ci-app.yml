@@ -50,7 +50,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U test -d tomatoscan_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -119,6 +119,18 @@ jobs:
       # Étape 6 — Vérification du formatage avec ruff (bloque les PR mal formatées)
       - name: Format check (ruff)
         run: uv run ruff format --check src/
+
+      # Étape 6ter — Filet de sécurité : s'assure que la base tomatoscan_test existe
+      # avant alembic. POSTGRES_DB (service ci-dessus) doit normalement suffire, mais
+      # l'image postgres officielle redémarre en interne après ses scripts d'init
+      # (initdb → serveur temporaire → arrêt → serveur définitif) ; pg_isready peut
+      # répondre "healthy" pendant cette fenêtre, avant que POSTGRES_DB ait fini d'être
+      # créée — flakiness connue des services PostgreSQL sous GitHub Actions. Le "|| true"
+      # évite un échec si la base existe déjà (cas normal, créée par POSTGRES_DB).
+      - name: Sécurité — création de la base si absente
+        run: |
+          PGPASSWORD=test psql -h localhost -U test -d postgres \
+            -c "CREATE DATABASE tomatoscan_test;" 2>/dev/null || true
 
       # Étape 6bis — Applique les migrations Alembic contre le service PostgreSQL réel
       # ci-dessus, pour que les tables existent avant que pytest ne s'exécute — et pour
