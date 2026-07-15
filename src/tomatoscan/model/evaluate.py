@@ -3,6 +3,7 @@
 Produit un rapport JSON avec métriques par classe et affiche la matrice de confusion.
 """
 
+import csv
 import glob
 import json
 import os
@@ -15,6 +16,15 @@ from loguru import logger
 from sklearn.metrics import classification_report, confusion_matrix
 
 from tomatoscan.model.train import construire_modele, selectionner_device
+
+# Seuil d'accuracy (sur le jeu de test) en dessous duquel un réentraînement est
+# recommandé (C11 — "déclencheurs pour l'entraînement continu"). Fixé à 85% :
+# le modèle de production tourne autour de ~93.5% d'accuracy selon les rapports
+# d'évaluation existants, donc 85% laisse une marge confortable pour absorber
+# le bruit de mesure normal entre deux évaluations, tout en détectant une
+# dérive réelle (nouvelles variétés de maladies, dataset qui a changé, etc.)
+# avant qu'elle devienne critique pour l'usage terrain.
+SEUIL_ACCURACY_REENTRAINEMENT = 0.85
 
 
 def charger_checkpoint(chemin_modele: str, nombre_classes: int) -> tuple:
@@ -197,6 +207,72 @@ def generer_rapport(
 
     except Exception as erreur:
         logger.error(f"Erreur lors de la génération du rapport : {erreur}")
+        raise
+
+
+def verifier_seuil_reentrainement(
+    accuracy_test: float, seuil: float = SEUIL_ACCURACY_REENTRAINEMENT
+) -> bool:
+    """Retourne True si l'accuracy sur le jeu de test est sous le seuil de
+    réentraînement — un déclencheur pur (aucun effet de bord), pour rester
+    facilement testable indépendamment de la journalisation.
+    """
+    return accuracy_test < seuil
+
+
+def journaliser_declenchement(
+    accuracy_test: float,
+    declenche: bool,
+    seuil: float = SEUIL_ACCURACY_REENTRAINEMENT,
+    dossier_rapport: str = "./docs",
+) -> str:
+    """Ajoute une ligne au log CSV des vérifications de seuil de réentraînement.
+
+    Contrairement aux rapports JSON de generer_rapport() (un nouveau fichier
+    horodaté par évaluation), ce log est cumulatif : chaque appel ajoute une
+    ligne au même fichier, pour garder un historique des décisions de
+    déclenchement dans le temps. CSV est choisi plutôt que JSON précisément
+    parce que ce fichier grandit ligne par ligne au fil des évaluations (comme
+    l'historique d'entraînement de train.py:sauvegarder_historique) — un
+    format append-only, alors que les rapports JSON sont des instantanés
+    complets et indépendants les uns des autres.
+
+    Retourne le chemin du fichier de log (créé avec un en-tête s'il n'existait pas).
+    """
+    os.makedirs(dossier_rapport, exist_ok=True)
+    chemin_log = os.path.join(dossier_rapport, "reentrainement_log.csv")
+    colonnes = ["date", "accuracy_test", "seuil", "declenche"]
+    fichier_existe = os.path.isfile(chemin_log)
+
+    try:
+        with open(chemin_log, "a", newline="", encoding="utf-8") as fichier:
+            writer = csv.DictWriter(fichier, fieldnames=colonnes)
+            if not fichier_existe:
+                writer.writeheader()
+            writer.writerow(
+                {
+                    "date": datetime.now().isoformat(),
+                    "accuracy_test": round(float(accuracy_test), 4),
+                    "seuil": seuil,
+                    "declenche": declenche,
+                }
+            )
+
+        if declenche:
+            logger.warning(
+                f"Accuracy test ({accuracy_test:.2%}) sous le seuil de "
+                f"réentraînement ({seuil:.0%}) — voir {chemin_log}"
+            )
+        else:
+            logger.info(
+                f"Accuracy test ({accuracy_test:.2%}) au-dessus du seuil de "
+                f"réentraînement ({seuil:.0%}) — aucun déclenchement nécessaire"
+            )
+
+        return chemin_log
+
+    except Exception as erreur:
+        logger.error(f"Erreur lors de la journalisation du déclenchement : {erreur}")
         raise
 
 
