@@ -10,13 +10,14 @@ tout le monde (admin compris) de la même façon, via la BDD.
 import os
 
 from loguru import logger
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from tomatoscan.api.core.security import hacher_mot_de_passe
 from tomatoscan.database.modeles import User
 
 
-def bootstrap_admin(session: Session) -> None:
+async def bootstrap_admin(session: AsyncSession) -> None:
     """Crée ou met à niveau le compte admin à partir des identifiants du `.env`.
 
     Idempotent : si le compte existe déjà avec le rôle "admin" et un mot de passe
@@ -33,7 +34,8 @@ def bootstrap_admin(session: Session) -> None:
         )
         return
 
-    utilisateur = session.query(User).filter_by(username=nom_admin).first()
+    resultat = await session.execute(select(User).filter_by(username=nom_admin))
+    utilisateur = resultat.scalar_one_or_none()
 
     if utilisateur is None:
         session.add(
@@ -44,12 +46,12 @@ def bootstrap_admin(session: Session) -> None:
                 role="admin",
             )
         )
-        session.commit()
+        await session.commit()
         logger.info(f"Compte admin {nom_admin!r} créé en BDD.")
     elif utilisateur.role != "admin" or not utilisateur.hashed_password:
         utilisateur.role = "admin"
         utilisateur.hashed_password = hacher_mot_de_passe(mot_de_passe_admin)
-        session.commit()
+        await session.commit()
         logger.info(
             f"Compte {nom_admin!r} mis à niveau en admin (rôle + mot de passe hashé)."
         )

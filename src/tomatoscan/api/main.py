@@ -52,12 +52,15 @@ async def lifespan(app: FastAPI):
     env = os.getenv("APP_ENV", "development")
     logger.info(f"TomatoScan API démarrée — environnement : {env}")
     logger.info("Variables d'environnement chargées depuis .env")
-    # Création des tables BDD si elles n'existent pas encore (idempotent)
-    Base.metadata.create_all(moteur)
+    # Création des tables BDD si elles n'existent pas encore (idempotent) — run_sync
+    # exécute l'appel Base.metadata.create_all (synchrone, API Core) sur la connexion
+    # asynchrone, seul moyen standard de mélanger les deux ici.
+    async with moteur.begin() as connexion:
+        await connexion.run_sync(Base.metadata.create_all)
     logger.info("Tables BDD initialisées.")
     # Garantit qu'un compte admin (role="admin", mot de passe hashé) existe en BDD
-    with SessionLocal() as session:
-        bootstrap_admin(session)
+    async with SessionLocal() as session:
+        await bootstrap_admin(session)
     # Chargement unique du modèle au démarrage
     model_service.initialiser_modele()
     yield
