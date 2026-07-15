@@ -15,12 +15,11 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 os.environ.setdefault("ADMIN_USERNAME", "admin_test")
 os.environ.setdefault("ADMIN_PASSWORD", "motdepasse_test_123")
-# SQLite asynchrone (aiosqlite) en mémoire pour les tests — rapide, aucun service
-# externe requis en CI. L'app cible réellement asyncpg/PostgreSQL en développement/
-# préprod/prod, mais le moteur async n'a été testé ici que contre SQLite/aiosqlite,
-# jamais contre un vrai PostgreSQL dans cet environnement — cette vérification reste
-# à faire avant déploiement. Les requêtes SQL de ce projet restent des CRUD simples,
-# sans fonctionnalité spécifique à un dialecte.
+# SQLite asynchrone (aiosqlite) en mémoire par défaut — rapide, aucun service externe
+# requis pour un `pytest` local. La CI (voir .github/workflows/ci-app.yml) exporte à la
+# place un DATABASE_URL pointant sur un vrai service PostgreSQL ; ce setdefault() ne
+# l'écrase pas (déjà présent dans l'environnement), donc les tests tournent alors
+# réellement contre asyncpg/PostgreSQL, pas contre ce substitut SQLite.
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 # Imports APRÈS les variables d'environnement pour que l'app les lise au démarrage
@@ -28,15 +27,27 @@ from tomatoscan.api.main import app  # noqa: E402
 from tomatoscan.database.bootstrap import bootstrap_admin  # noqa: E402
 from tomatoscan.database.connexion import Base, obtenir_session  # noqa: E402
 
-# Moteur SQLite en mémoire avec StaticPool.
-# StaticPool force toutes les sessions à partager la même connexion physique :
-# les tables créées par create_all() restent visibles pour toutes les sessions de test.
-# Sans StaticPool, sqlite:///:memory: crée une nouvelle BDD vide par connexion.
-_moteur_test = create_async_engine(
-    "sqlite+aiosqlite:///:memory:",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
+# Moteur de test — construit sur DATABASE_URL (SQLite en local par défaut, PostgreSQL
+# réel en CI) plutôt qu'un dialecte figé, pour que le service PostgreSQL de la CI soit
+# effectivement utilisé par les tests, et non contourné par un moteur SQLite en dur.
+_DATABASE_URL_TEST = os.environ["DATABASE_URL"]
+
+if _DATABASE_URL_TEST.startswith("sqlite"):
+    # StaticPool force toutes les sessions à partager la même connexion physique :
+    # les tables créées par create_all() restent visibles pour toutes les sessions de
+    # test. Sans StaticPool, sqlite:///:memory: crée une nouvelle BDD vide par connexion.
+    # check_same_thread=False est un paramètre pysqlite/aiosqlite — n'existe pas côté
+    # asyncpg, donc ce branchement reste réservé à SQLite.
+    _moteur_test = create_async_engine(
+        _DATABASE_URL_TEST,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+else:
+    # PostgreSQL réel (CI) : connexion serveur classique — StaticPool est inutile
+    # (le serveur persiste déjà les données entre connexions, contrairement à
+    # sqlite:///:memory:) et connect_args ci-dessus n'est pas compris par asyncpg.
+    _moteur_test = create_async_engine(_DATABASE_URL_TEST)
 
 _SessionTest = async_sessionmaker(
     bind=_moteur_test, autocommit=False, autoflush=False, expire_on_commit=False

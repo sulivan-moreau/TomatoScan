@@ -2,9 +2,14 @@
 #
 # Architecture de déploiement :
 #   push sur develop → Coolify déclenche le déploiement preprod
-#                       (SQLite, single user, docker-compose.override.yml sur VPS OVH)
+#                       (PostgreSQL async, docker-compose.override.yml sur VPS OVH)
 #   push sur main    → Coolify déclenche le déploiement prod
 #                       (PostgreSQL, docker-compose.yml sur VPS OVH)
+#
+# PostgreSQL étant désormais le seul moteur de l'application (create_async_engine +
+# asyncpg, plus de SQLite en dehors des tests locaux rapides), la CI démarre un vrai
+# service PostgreSQL (voir "services:" ci-dessous) plutôt qu'un substitut SQLite —
+# un DATABASE_URL sqlite:// (driver sync) ferait planter create_async_engine().
 #
 # Modèle MobileNetV2 (.pt) :
 #   Stocké dans un volume Docker persistant sur le VPS — absent de ce dépôt (trop volumineux).
@@ -31,6 +36,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    # Service PostgreSQL réel — PostgreSQL étant le seul moteur ciblé par l'application
+    # (create_async_engine/asyncpg), la CI teste contre une vraie instance plutôt qu'un
+    # substitut SQLite. GitHub Actions attend que le healthcheck pg_isready passe avant
+    # de démarrer les steps ci-dessous.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: tomatoscan_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
       # Secrets configurés dans GitHub → Settings → Secrets and variables → Actions
       # (voir section "Secrets à configurer" en bas de ce fichier)
@@ -38,8 +62,11 @@ jobs:
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
 
-      # SQLite local pour les tests — évite toute dépendance externe à PostgreSQL
-      DATABASE_URL: sqlite:///./test.db
+      # PostgreSQL réel (service ci-dessus) — moteur async (asyncpg), cohérent avec
+      # create_async_engine() dans database/connexion.py. localhost:5432 : le service
+      # est exposé sur l'hôte du runner via "ports", pas seulement sur le réseau interne
+      # des containers.
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/tomatoscan_test
 
       # Le modèle .pt est absent du dépôt : les tests mockent model_service
       # via unittest.mock.patch → aucun checkpoint réel n'est nécessaire en CI
@@ -92,6 +119,13 @@ jobs:
       # Étape 6 — Vérification du formatage avec ruff (bloque les PR mal formatées)
       - name: Format check (ruff)
         run: uv run ruff format --check src/
+
+      # Étape 6bis — Applique les migrations Alembic contre le service PostgreSQL réel
+      # ci-dessus, pour que les tables existent avant que pytest ne s'exécute — et pour
+      # vérifier, à chaque run de CI, que les migrations s'appliquent bien sur un vrai
+      # PostgreSQL (pas seulement sur SQLite en local).
+      - name: Migrations BDD (alembic upgrade head)
+        run: uv run alembic upgrade head
 
       # Étape 7 — Exécution de la suite complète (API + modèle + frontend + BDD) avec couverture
       # Cible : couverture > 80% sur src/tomatoscan/api/
