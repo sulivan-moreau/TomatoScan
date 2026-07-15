@@ -2,13 +2,8 @@
 
 Complète tests/test_frontend/test_api_client.py : ici on exécute le vrai
 app.py + les vraies pages via streamlit.testing.v1.AppTest (exécution réelle
-du script, pas un mock de haut niveau), pour vérifier que le rôle affiché
-correspond toujours au token réellement en session — architecture où
-session_state["role"] n'existe plus du tout : le rôle est recalculé à la
-demande via api_client.obtenir_role(token) partout où il est nécessaire
-(app.py, pages/accueil.py, pages/dashboard.py, pages/creer_membre.py,
-pages/history.py). Voir docs/audit_role_final_complet.md pour le
-raisonnement complet derrière ce choix.
+du script, pas un mock de haut niveau), pour vérifier que le rôle mis en
+session au login pilote bien la navigation et les garde-fous de page.
 
 Seul requests.post est mocké (aucun appel réseau réel) — tout le reste
 (session_state, rerun, navigation, garde-fous de page) est exécuté pour de
@@ -53,17 +48,31 @@ def _reponse_login_mock(token: str) -> MagicMock:
     return reponse
 
 
+def _reponse_me_mock(username: str, role: str) -> MagicMock:
+    reponse = MagicMock()
+    reponse.status_code = 200
+    reponse.ok = True
+    reponse.json.return_value = {"username": username, "role": role}
+    return reponse
+
+
 def _connecter(
-    at: AppTest, nom_utilisateur: str, mot_de_passe: str, token: str
+    at: AppTest, nom_utilisateur: str, mot_de_passe: str, token: str, role: str
 ) -> AppTest:
     """Simule une connexion complète via le vrai formulaire pages/login.py,
     avec uniquement l'appel réseau (requests.post) mocké."""
     at.switch_page("pages/login.py")
     at.run()
 
-    with patch(
-        "tomatoscan.front.utils.api_client.requests.post",
-        return_value=_reponse_login_mock(token),
+    with (
+        patch(
+            "tomatoscan.front.utils.api_client.requests.post",
+            return_value=_reponse_login_mock(token),
+        ),
+        patch(
+            "tomatoscan.front.utils.api_client.requests.get",
+            return_value=_reponse_me_mock(nom_utilisateur, role),
+        ),
     ):
         at.text_input[0].input(nom_utilisateur).run()
         at.text_input[1].input(mot_de_passe).run()
@@ -79,14 +88,14 @@ class TestConnexionAdmin:
     def test_connexion_admin_ne_leve_aucune_exception(self):
         at = AppTest.from_file(APP_PATH)
         at.run()
-        at = _connecter(at, "admin", "admin123", _jwt("admin"))
+        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
 
         assert not at.exception
 
     def test_admin_accede_au_tableau_de_bord_sans_etre_bloque(self):
         at = AppTest.from_file(APP_PATH)
         at.run()
-        at = _connecter(at, "admin", "admin123", _jwt("admin"))
+        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
 
         at.switch_page("pages/dashboard.py")
         at.run()
@@ -98,7 +107,7 @@ class TestConnexionAdmin:
     def test_admin_accede_a_creer_membre_sans_etre_bloque(self):
         at = AppTest.from_file(APP_PATH)
         at.run()
-        at = _connecter(at, "admin", "admin123", _jwt("admin"))
+        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
 
         at.switch_page("pages/creer_membre.py")
         at.run()
@@ -110,7 +119,7 @@ class TestConnexionAdmin:
     def test_accueil_affiche_bien_la_section_administration_pour_un_admin(self):
         at = AppTest.from_file(APP_PATH)
         at.run()
-        at = _connecter(at, "admin", "admin123", _jwt("admin"))
+        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
 
         at.switch_page("pages/accueil.py")
         at.run()
@@ -128,14 +137,18 @@ class TestConnexionAgriculteur:
     def test_connexion_agriculteur_ne_leve_aucune_exception(self):
         at = AppTest.from_file(APP_PATH)
         at.run()
-        at = _connecter(at, "agriculteur01", "secret", _jwt("agriculteur"))
+        at = _connecter(
+            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
+        )
 
         assert not at.exception
 
     def test_agriculteur_est_bloque_sur_le_tableau_de_bord(self):
         at = AppTest.from_file(APP_PATH)
         at.run()
-        at = _connecter(at, "agriculteur01", "secret", _jwt("agriculteur"))
+        at = _connecter(
+            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
+        )
 
         at.switch_page("pages/dashboard.py")
         at.run()
@@ -147,7 +160,9 @@ class TestConnexionAgriculteur:
     def test_agriculteur_est_bloque_sur_creer_membre(self):
         at = AppTest.from_file(APP_PATH)
         at.run()
-        at = _connecter(at, "agriculteur01", "secret", _jwt("agriculteur"))
+        at = _connecter(
+            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
+        )
 
         at.switch_page("pages/creer_membre.py")
         at.run()
@@ -159,7 +174,9 @@ class TestConnexionAgriculteur:
     def test_accueil_n_affiche_pas_la_section_administration_pour_un_agriculteur(self):
         at = AppTest.from_file(APP_PATH)
         at.run()
-        at = _connecter(at, "agriculteur01", "secret", _jwt("agriculteur"))
+        at = _connecter(
+            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
+        )
 
         at.switch_page("pages/accueil.py")
         at.run()
@@ -170,25 +187,26 @@ class TestConnexionAgriculteur:
 
 
 class TestImpossibiliteDeDesynchronisation:
-    """Preuve directe qu'il n'existe plus de state "role" à désynchroniser :
-    session_state ne contient jamais la clé "role", avant ni après connexion,
-    quel que soit le rôle du compte connecté."""
+    """Preuve directe que le rôle est bien fixé en session et suit le login.
+    La clé "role" doit exister après connexion et refléter le token utilisé."""
 
-    def test_session_state_ne_contient_jamais_la_cle_role_apres_connexion_admin(self):
+    def test_session_state_contient_le_role_admin_apres_connexion(self):
         at = AppTest.from_file(APP_PATH)
         at.run()
-        at = _connecter(at, "admin", "admin123", _jwt("admin"))
+        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
 
-        assert "role" not in at.session_state
+        assert at.session_state["role"] == "admin"
 
-    def test_session_state_ne_contient_jamais_la_cle_role_apres_connexion_agriculteur(
+    def test_session_state_contient_le_role_agriculteur_apres_connexion(
         self,
     ):
         at = AppTest.from_file(APP_PATH)
         at.run()
-        at = _connecter(at, "agriculteur01", "secret", _jwt("agriculteur"))
+        at = _connecter(
+            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
+        )
 
-        assert "role" not in at.session_state
+        assert at.session_state["role"] == "agriculteur"
 
     def test_changer_le_role_dans_le_token_change_immediatement_l_acces_affiche(self):
         """Le rôle n'est jamais mis en cache dans une variable séparée : si un
@@ -215,14 +233,16 @@ class TestImpossibiliteDeDesynchronisation:
         at.run()
 
         # 1) connexion admin — accès attendu
-        at = _connecter(at, "admin", "admin123", _jwt("admin"))
+        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
         at.switch_page("pages/dashboard.py")
         at.run()
         assert "Accès réservé aux administrateurs." not in [e.value for e in at.error]
 
         # 2) reconnexion avec un compte agriculteur, sans logout explicite —
         # accès attendu bloqué malgré l'admin encore "récent"
-        at = _connecter(at, "agriculteur01", "secret", _jwt("agriculteur"))
+        at = _connecter(
+            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
+        )
         at.switch_page("pages/dashboard.py")
         at.run()
         assert "Accès réservé aux administrateurs." in [e.value for e in at.error]

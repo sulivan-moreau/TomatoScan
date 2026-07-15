@@ -3,8 +3,8 @@
 Expose :
 - ping()           — vérifie que l'API répond (GET /health)
 - login()          — authentifie l'utilisateur, retourne le token JWT
+- me()             — récupère la session validée côté API (GET /auth/me)
 - is_token_valid() — vérifie localement que le token n'est pas expiré
-- obtenir_role()   — extrait le rôle depuis le token (jamais stocké séparément)
 - predict()        — envoie une image, retourne le résultat de prédiction
 - get_history()    — récupère l'historique des prédictions de l'utilisateur
 - list_users()     — liste les comptes utilisateurs (admin uniquement)
@@ -215,6 +215,26 @@ def login(nom_utilisateur: str, mot_de_passe: str) -> str:
     return token
 
 
+def me(token: str) -> dict:
+    """Récupère la session courante validée par l'API via GET /auth/me.
+
+    Retourne un dict contenant au minimum {"username": ..., "role": ...}.
+    Lève ApiError si le token est invalide, expiré ou si l'API est injoignable.
+    """
+    reponse = _requete_api(
+        "GET",
+        "/auth/me",
+        token=token,
+        message_erreur_reseau="Impossible de joindre le serveur pour récupérer la session.",
+        message_erreur_defaut="Impossible de récupérer la session courante.",
+    )
+
+    try:
+        return reponse.json()
+    except ValueError:
+        raise ApiError("Réponse de l'API illisible (JSON attendu).")
+
+
 def _decoder_payload_token(token: str) -> dict:
     """Décode la payload d'un JWT sans vérifier la signature (la vérification de
     validité se fait côté API, ici on lit juste le contenu pour affichage côté client).
@@ -241,21 +261,6 @@ def is_token_valid(token: str | None = None) -> bool:
         # un échec de décodage réel (jwt.decode lève une exception PyJWT).
         logger.warning("Échec du décodage du token JWT (is_token_valid)", exc_info=True)
         return False
-
-
-def obtenir_role(token: str) -> str:
-    """Extrait le rôle ("admin" ou "agriculteur") depuis la payload du JWT.
-
-    Lecture locale non vérifiée, à des fins d'affichage/navigation uniquement —
-    chaque route sensible revérifie le rôle côté serveur.
-    """
-    try:
-        return _decoder_payload_token(token).get("role", "agriculteur")
-    except Exception:
-        # Échec de décodage réel (token malformé) : retour par défaut loggué,
-        # pas silencieux — pour qu'un futur bug de ce type reste visible.
-        logger.warning("Échec du décodage du token JWT (obtenir_role)", exc_info=True)
-        return "agriculteur"
 
 
 def predict(octets_image: bytes, nom_fichier: str, token: str) -> dict:

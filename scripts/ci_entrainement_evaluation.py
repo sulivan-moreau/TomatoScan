@@ -20,12 +20,19 @@ Variables d'environnement (toutes non sensibles, avec défauts raisonnables) :
     CI_BATCH_SIZE     — taille de batch (défaut : 4, adapté à un mini-dataset de 32 images)
 """
 
+import json
 import os
 import sys
 
 from loguru import logger
 
-from tomatoscan.model.evaluate import charger_checkpoint, executer_inference, generer_rapport
+from tomatoscan.model.evaluate import (
+    charger_checkpoint,
+    executer_inference,
+    generer_rapport,
+    journaliser_declenchement,
+    verifier_seuil_reentrainement,
+)
 from tomatoscan.model.preprocess import charger_dataset
 from tomatoscan.model.train import entrainer_modele, selectionner_device
 
@@ -77,6 +84,15 @@ def main() -> None:
         dossier_rapport=REPORT_DIR,
     )
     logger.info(f"Rapport généré : {chemin_rapport}")
+
+    # Vérification du seuil de réentraînement (C11) — relit accuracy_test depuis
+    # le rapport tout juste écrit plutôt que de la recalculer, pour ne jamais
+    # diverger de la valeur qui y est réellement consignée.
+    with open(chemin_rapport, encoding="utf-8") as fichier_rapport:
+        accuracy_test = json.load(fichier_rapport)["accuracy_test"]
+    declenche = verifier_seuil_reentrainement(accuracy_test)
+    journaliser_declenchement(accuracy_test, declenche, dossier_rapport=REPORT_DIR)
+
     logger.info("=== Pipeline CI modèle terminé sans erreur ===")
 
 

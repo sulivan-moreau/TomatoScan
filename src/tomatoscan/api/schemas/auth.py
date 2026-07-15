@@ -5,6 +5,13 @@ Schémas Pydantic pour l'authentification JWT.
 from pydantic import BaseModel
 
 
+class MeResponse(BaseModel):
+    """Représentation de la session courante retournée par l'API."""
+
+    username: str
+    role: str
+
+
 class LoginRequest(BaseModel):
     """Identifiants envoyés par le client pour obtenir un token."""
 

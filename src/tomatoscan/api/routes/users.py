@@ -4,6 +4,7 @@ Routes GET/POST/DELETE /users — gestion des comptes agriculteur.
 Toutes réservées aux administrateurs via Depends(verifier_role_admin).
 """
 
+import os
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -109,6 +110,17 @@ async def supprimer_utilisateur(
     if utilisateur is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable."
+        )
+
+    nom_admin_bootstrap = os.getenv("ADMIN_USERNAME", "")
+
+    # Le compte admin bootstrapé depuis l'environnement est un point d'ancrage du système
+    # d'authentification : il doit rester présent en base pour que la connexion admin
+    # reste fonctionnelle même après une suppression accidentelle d'autres comptes.
+    if utilisateur.username == nom_admin_bootstrap:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Le compte administrateur bootstrap ne peut pas être supprimé.",
         )
 
     # Comparaison par username plutôt que par id récupéré séparément : équivalent

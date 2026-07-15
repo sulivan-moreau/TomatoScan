@@ -103,11 +103,19 @@ def main():
         st.session_state["session_expiree"] = True
         st.rerun()
 
+    # Si la session contient un token mais pas de rôle, on considère l'état comme
+    # incohérent : le rôle doit toujours être fixé au login. Pas de fallback JWT.
+    if token_actuel and "role" not in st.session_state:
+        st.session_state.clear()
+        st.session_state["session_expiree"] = True
+        st.rerun()
+
     # Sidebar toujours visible : logo TomatoScan + état API + déconnexion si connecté
     sidebar_header()
 
     if st.session_state.get("token"):
         # Utilisateur connecté : Accueil/Analyse/Historique pour tous, pages admin en plus si role="admin"
+        role_actuel = st.session_state.get("role")
         pages = [
             st.Page(
                 "pages/accueil.py",
@@ -126,7 +134,7 @@ def main():
                 icon=":material/history:",
             ),
         ]
-        if api_client.obtenir_role(token_actuel) == "admin":
+        if role_actuel == "admin":
             pages.append(
                 st.Page(
                     "pages/dashboard.py",

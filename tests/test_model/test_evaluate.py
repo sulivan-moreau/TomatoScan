@@ -37,6 +37,7 @@ Bugs réels identifiés pendant l'écriture de ces tests :
    avant fonctionne correctement après le fix.
 """
 
+import csv
 import json
 from unittest.mock import MagicMock, patch
 
@@ -45,10 +46,13 @@ import torch
 from sklearn.metrics import confusion_matrix as sk_confusion_matrix
 
 from tomatoscan.model.evaluate import (
+    SEUIL_ACCURACY_REENTRAINEMENT,
     afficher_confusion_matrix,
     charger_checkpoint,
     executer_inference,
     generer_rapport,
+    journaliser_declenchement,
+    verifier_seuil_reentrainement,
 )
 
 NOMS_CLASSES = [f"classe_{i}" for i in range(10)]
@@ -59,7 +63,9 @@ NOMS_CLASSES = [f"classe_{i}" for i in range(10)]
 
 @patch("tomatoscan.model.evaluate.construire_modele")
 @patch("tomatoscan.model.evaluate.torch.load")
-def test_charger_checkpoint_extrait_les_bons_champs(mock_torch_load, mock_construire_modele):
+def test_charger_checkpoint_extrait_les_bons_champs(
+    mock_torch_load, mock_construire_modele
+):
     """Le checkpoint chargé doit renvoyer (modele, noms_classes, epoch, accuracy)
     exactement conformes au contenu (connu à l'avance) du fichier .pt."""
     faux_checkpoint = {
@@ -78,7 +84,9 @@ def test_charger_checkpoint_extrait_les_bons_champs(mock_torch_load, mock_constr
     )
 
     mock_construire_modele.assert_called_once_with(10)
-    faux_modele.load_state_dict.assert_called_once_with(faux_checkpoint["model_state_dict"])
+    faux_modele.load_state_dict.assert_called_once_with(
+        faux_checkpoint["model_state_dict"]
+    )
     faux_modele.eval.assert_called_once()
 
     assert modele is faux_modele
@@ -127,7 +135,9 @@ def test_executer_inference_collecte_labels_reels_et_predictions():
     modele = MagicMock()
     modele.side_effect = [logits_lot_1, logits_lot_2]
 
-    labels_reels, predictions = executer_inference(modele, dataloader, torch.device("cpu"))
+    labels_reels, predictions = executer_inference(
+        modele, dataloader, torch.device("cpu")
+    )
 
     modele.eval.assert_called_once()
     assert labels_reels == [0, 1, 2, 0]
@@ -375,3 +385,70 @@ def test_generer_rapport_classe_totalement_absente_ne_plante_plus(tmp_path):
     assert "classe_9" in rapport["classes_sous_performantes"]
     # Les 9 échantillons présents sont tous corrects → accuracy 1.0 malgré l'absence
     assert rapport["accuracy_test"] == 1.0
+
+
+# --- Déclencheur de réentraînement (C11) -----------------------------------------
+
+
+def test_verifier_seuil_reentrainement_declenche_si_accuracy_basse():
+    """Une accuracy nettement sous le seuil doit déclencher (True)."""
+    assert verifier_seuil_reentrainement(0.60, seuil=0.85) is True
+
+
+def test_verifier_seuil_reentrainement_ne_declenche_pas_si_accuracy_haute():
+    """Une accuracy nettement au-dessus du seuil ne doit pas déclencher (False)."""
+    assert verifier_seuil_reentrainement(0.95, seuil=0.85) is False
+
+
+def test_verifier_seuil_reentrainement_cas_limite_exactement_au_seuil():
+    """Comparaison stricte (<) : une accuracy exactement égale au seuil ne doit
+    PAS déclencher — seul un passage EN DESSOUS du seuil déclenche."""
+    assert verifier_seuil_reentrainement(0.85, seuil=0.85) is False
+
+
+def test_verifier_seuil_reentrainement_utilise_le_seuil_par_defaut():
+    """Sans seuil explicite, la constante SEUIL_ACCURACY_REENTRAINEMENT (0.85)
+    doit être utilisée."""
+    assert SEUIL_ACCURACY_REENTRAINEMENT == 0.85
+    assert verifier_seuil_reentrainement(0.84) is True
+    assert verifier_seuil_reentrainement(0.86) is False
+
+
+def test_journaliser_declenchement_ecrit_un_csv_avec_en_tete(tmp_path):
+    """Le premier appel doit créer le fichier avec un en-tête et une ligne de données."""
+    chemin_log = journaliser_declenchement(
+        accuracy_test=0.60, declenche=True, seuil=0.85, dossier_rapport=str(tmp_path)
+    )
+
+    assert chemin_log == str(tmp_path / "reentrainement_log.csv")
+
+    with open(chemin_log, newline="", encoding="utf-8") as fichier:
+        lignes = list(csv.DictReader(fichier))
+
+    assert len(lignes) == 1
+    assert lignes[0]["accuracy_test"] == "0.6"
+    assert lignes[0]["seuil"] == "0.85"
+    assert lignes[0]["declenche"] == "True"
+    assert "date" in lignes[0]
+
+
+def test_journaliser_declenchement_ajoute_les_lignes_sans_dupliquer_l_en_tete(
+    tmp_path,
+):
+    """Plusieurs appels successifs doivent accumuler des lignes dans le même
+    fichier (log cumulatif), avec un en-tête écrit une seule fois."""
+    journaliser_declenchement(0.60, True, seuil=0.85, dossier_rapport=str(tmp_path))
+    journaliser_declenchement(0.95, False, seuil=0.85, dossier_rapport=str(tmp_path))
+
+    chemin_log = tmp_path / "reentrainement_log.csv"
+    contenu = chemin_log.read_text(encoding="utf-8")
+
+    # L'en-tête ("date,accuracy_test,...") ne doit apparaître qu'une seule fois
+    assert contenu.count("accuracy_test") == 1
+
+    with open(chemin_log, newline="", encoding="utf-8") as fichier:
+        lignes = list(csv.DictReader(fichier))
+
+    assert len(lignes) == 2
+    assert lignes[0]["declenche"] == "True"
+    assert lignes[1]["declenche"] == "False"

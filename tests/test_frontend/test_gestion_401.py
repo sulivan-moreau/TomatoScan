@@ -53,17 +53,32 @@ def _reponse_401_mock() -> MagicMock:
     return reponse
 
 
+def _reponse_me_mock() -> MagicMock:
+    reponse = MagicMock()
+    reponse.status_code = 200
+    reponse.ok = True
+    reponse.json.return_value = {"username": "admin", "role": "admin"}
+    return reponse
+
+
 def _connecter_admin(at: AppTest) -> AppTest:
     at.switch_page("pages/login.py")
     at.run()
-    with patch(
-        "tomatoscan.front.utils.api_client.requests.post",
-        return_value=_reponse_login_mock(),
+    with (
+        patch(
+            "tomatoscan.front.utils.api_client.requests.post",
+            return_value=_reponse_login_mock(),
+        ),
+        patch(
+            "tomatoscan.front.utils.api_client.requests.get",
+            return_value=_reponse_me_mock(),
+        ),
     ):
         at.text_input[0].input("admin").run()
         at.text_input[1].input("admin123").run()
         at.button[0].click().run()
     assert "token" in at.session_state
+    assert at.session_state["role"] == "admin"
     return at
 
 

@@ -8,12 +8,34 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tomatoscan.api.core.limiter import limiteur
-from tomatoscan.api.core.security import creer_token_acces, verifier_mot_de_passe
-from tomatoscan.api.schemas.auth import LoginRequest, TokenResponse
+from tomatoscan.api.core.security import (
+    creer_token_acces,
+    obtenir_role_courant,
+    obtenir_utilisateur_courant,
+    verifier_mot_de_passe,
+)
+from tomatoscan.api.schemas.auth import LoginRequest, MeResponse, TokenResponse
 from tomatoscan.database.connexion import obtenir_session
 from tomatoscan.database.modeles import User
 
 router = APIRouter(prefix="/auth", tags=["Authentification"])
+
+
+@router.get(
+    "/me",
+    response_model=MeResponse,
+    responses={401: {"description": "Token invalide, expiré ou absent."}},
+)
+async def session_courante(
+    username: str = Depends(obtenir_utilisateur_courant),
+    role: str = Depends(obtenir_role_courant),
+) -> MeResponse:
+    """Retourne la session courante validée par le serveur.
+
+    Ce point de vérité permet au frontend de récupérer l'identité et le rôle
+    depuis l'API plutôt que de relire le JWT localement.
+    """
+    return MeResponse(username=username, role=role)
 
 
 @router.post(

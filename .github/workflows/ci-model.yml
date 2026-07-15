@@ -79,10 +79,43 @@ jobs:
       # Étape 7 — Entraînement + évaluation RÉELS (pas de mock) sur le mini-dataset.
       # Utilise entrainer_modele()/charger_checkpoint()/executer_inference()/
       # generer_rapport() de train.py/evaluate.py tels quels, via scripts/
-      # ci_entrainement_evaluation.py — aucun seuil d'accuracy vérifié, seul le bon
-      # déroulement technique du pipeline compte pour ce critère C13.
+      # ci_entrainement_evaluation.py. Le script vérifie désormais aussi le seuil
+      # de réentraînement (C11) et journalise la décision dans
+      # ci_artifacts/reports/reentrainement_log.csv — mais aucun seuil ne fait
+      # échouer ce job : seul le bon déroulement technique du pipeline compte
+      # pour ce critère C13 (voir étape 7bis pour ce que fait ce seuil).
       - name: Entraînement + évaluation sur le mini-dataset
         run: uv run python scripts/ci_entrainement_evaluation.py
+
+      # Étape 7bis — Vérifie si l'évaluation qui vient de tourner est passée sous
+      # le seuil de réentraînement (C11 — "déclencheurs pour l'entraînement continu"),
+      # et se contente d'un avertissement dans les logs/résumé du run.
+      #
+      # Volontairement PAS de déclenchement automatique de cd-model.yml ici, et pas
+      # de "gh workflow run"/repository-dispatch : ce pipeline entraîne sur un
+      # mini-dataset de 32 images en 2 epochs (voir l'étape 7 ci-dessus et l'en-tête
+      # de ce fichier) — un smoke-test de la chaîne technique, pas une évaluation
+      # représentative du modèle de production. Son accuracy n'a aucune valeur
+      # prédictive sur la qualité du modèle réel (elle a mesuré ~20% sur un run
+      # de vérification, un chiffre sans rapport avec le ~93.5% du modèle de
+      # production) et ne doit jamais piloter un déploiement automatique vers le
+      # VPS. Si ce mécanisme doit un jour déclencher un vrai déploiement, il devra
+      # d'abord être branché sur une évaluation du modèle de production (dataset
+      # complet PlantVillage, pas ce mini-dataset), avec une revue humaine avant
+      # tout redémarrage du conteneur API en production — pas dans ce workflow.
+      - name: Vérification du seuil de réentraînement (alerte uniquement, pas de déploiement auto)
+        if: always()
+        run: |
+          CHEMIN_LOG="${{ env.CI_REPORT_DIR }}/reentrainement_log.csv"
+          if [ ! -f "$CHEMIN_LOG" ]; then
+            echo "Aucun log de déclenchement trouvé (l'étape précédente a peut-être échoué avant de l'écrire)."
+            exit 0
+          fi
+          DERNIERE_LIGNE=$(tail -n 1 "$CHEMIN_LOG")
+          echo "Dernière vérification de seuil : $DERNIERE_LIGNE"
+          if echo "$DERNIERE_LIGNE" | grep -q ",True$"; then
+            echo "::warning::Accuracy sous le seuil de réentraînement sur ce run CI (mini-dataset uniquement — ne concerne PAS le modèle de production, voir le commentaire de cette étape dans ci-model.yml)."
+          fi
 
       # Étape 8 — Publication du checkpoint entraîné + du rapport JSON comme artifact,
       # accessible depuis l'onglet "Summary" du run (et donc depuis la PR). if: always()
