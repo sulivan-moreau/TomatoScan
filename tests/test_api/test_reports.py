@@ -2,11 +2,6 @@
 import os
 
 import pytest
-from fastapi.testclient import TestClient
-
-from tomatoscan.api.main import app
-
-client = TestClient(app)
 
 # Identifiants définis dans tests/conftest.py
 NOM_ADMIN = os.getenv("ADMIN_USERNAME", "admin_test")
@@ -20,22 +15,22 @@ CSV_CONTENU = (
 )
 
 
-def _obtenir_token_valide() -> str:
+async def _obtenir_token_valide(client) -> str:
     """Effectue une connexion et retourne le token JWT Bearer."""
-    reponse = client.post(
+    reponse = await client.post(
         "/auth/token",
         json={"username": NOM_ADMIN, "password": MOT_DE_PASSE_ADMIN},
     )
     return reponse.json()["access_token"]
 
 
-def test_reports_sans_token():
+async def test_reports_sans_token(client):
     """Appel à /reports sans token Bearer — attend status 401."""
-    reponse = client.get("/reports")
+    reponse = await client.get("/reports")
     assert reponse.status_code == 401
 
 
-def test_reports_avec_token(tmp_path, monkeypatch):
+async def test_reports_avec_token(tmp_path, monkeypatch, client):
     """CSV temporaire pointé par REPORTS_PATH — attend 200 avec les champs attendus."""
     # Création du fichier CSV temporaire via tmp_path pytest
     fichier_csv = tmp_path / "historique_test.csv"
@@ -44,8 +39,8 @@ def test_reports_avec_token(tmp_path, monkeypatch):
     # Injection de REPORTS_PATH pour pointer vers le CSV temporaire
     monkeypatch.setenv("REPORTS_PATH", str(fichier_csv))
 
-    token = _obtenir_token_valide()
-    reponse = client.get("/reports", headers={"Authorization": f"Bearer {token}"})
+    token = await _obtenir_token_valide(client)
+    reponse = await client.get("/reports", headers={"Authorization": f"Bearer {token}"})
 
     assert reponse.status_code == 200
     corps = reponse.json()
@@ -63,18 +58,18 @@ def test_reports_avec_token(tmp_path, monkeypatch):
     assert epoch_1["val_accuracy"] == pytest.approx(0.9001, rel=1e-4)
 
 
-def test_reports_fichier_introuvable(monkeypatch):
+async def test_reports_fichier_introuvable(monkeypatch, client):
     """REPORTS_PATH pointe vers un fichier inexistant — attend status 404."""
     monkeypatch.setenv("REPORTS_PATH", "/chemin/inexistant/historique.csv")
 
-    token = _obtenir_token_valide()
-    reponse = client.get("/reports", headers={"Authorization": f"Bearer {token}"})
+    token = await _obtenir_token_valide(client)
+    reponse = await client.get("/reports", headers={"Authorization": f"Bearer {token}"})
 
     assert reponse.status_code == 404
     assert "introuvable" in reponse.json()["detail"]
 
 
-def test_reports_csv_malformed(tmp_path, monkeypatch):
+async def test_reports_csv_malformed(tmp_path, monkeypatch, client):
     """open() patché pour lever KeyError lors de la lecture du CSV — attend status 500.
 
     Simule un fichier lisible mais dont la lecture échoue (colonnes manquantes, encodage
@@ -88,11 +83,13 @@ def test_reports_csv_malformed(tmp_path, monkeypatch):
     monkeypatch.setenv("REPORTS_PATH", str(fichier_csv))
 
     # Token obtenu AVANT de patcher open() pour ne pas bloquer l'authentification
-    token = _obtenir_token_valide()
+    token = await _obtenir_token_valide(client)
 
     # Patcher open() pour simuler une erreur de lecture (KeyError → capturé par except Exception)
     with patch("builtins.open", side_effect=KeyError("epoch")):
-        reponse = client.get("/reports", headers={"Authorization": f"Bearer {token}"})
+        reponse = await client.get(
+            "/reports", headers={"Authorization": f"Bearer {token}"}
+        )
 
     assert reponse.status_code == 500
     assert "erreur" in reponse.json()["detail"].lower()
