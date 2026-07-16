@@ -29,11 +29,17 @@ services:
       - coolify
     healthcheck:
       # Vérifie que l'API répond sur /health avant de démarrer le frontend
+      # start_period/retries élargis (20s/3 → 60s/5) : le lifespan de l'API attend
+      # désormais postgres_preprod (service_healthy) avant même de démarrer, puis
+      # fait des allers-retours réseau réels (create_all + bootstrap_admin) avant
+      # de charger le modèle MobileNetV2 — un chemin de démarrage plus long qu'avec
+      # SQLite, que l'ancien budget (20s/3) ne couvrait plus de façon fiable
+      # (voir docs/audit_impact_derniers_changements.md).
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 20s
+      retries: 5
+      start_period: 60s
 
   # ─── Frontend Streamlit ───────────────────────────────────────────────────────
   front:
