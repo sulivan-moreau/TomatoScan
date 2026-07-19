@@ -38,6 +38,7 @@ docker-compose.local.yml
 
 # Couverture de tests
 .coverage
+htmlcov/
 
 # Documents de référence de certification (fournis par Satoshi, jamais à committer)
 docs/reac (1).md

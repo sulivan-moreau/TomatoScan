@@ -15,4 +15,7 @@ scrape_configs:
     static_configs:
       # 'api' est le nom du service Docker — résolvable sur le réseau coolify
       - targets: ['api:8000']
-    metrics_path: /metrics
+    # Slash final : app.mount("/metrics", ...) (FastAPI/Starlette) redirige (307)
+    # "/metrics" vers "/metrics/" — cibler directement l'URL qui répond 200 évite
+    # de dépendre du comportement par défaut de Prometheus vis-à-vis des redirections.
+    metrics_path: /metrics/

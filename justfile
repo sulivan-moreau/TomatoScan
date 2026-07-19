@@ -11,7 +11,7 @@ api:
 
 # Lancer l'app Streamlit
 app:
-    uv run streamlit run src/tomatoscan/front/main.py
+    uv run streamlit run src/tomatoscan/front/app.py
 
 # Lancer les tests
 test:
@@ -28,10 +28,6 @@ format:
 # Entraîner le modèle
 train:
     uv run python src/tomatoscan/model/train.py
-
-# Lancer MLflow UI
-mlflow:
-    uv run mlflow ui --port 5000
 
 # Docker
 up:
