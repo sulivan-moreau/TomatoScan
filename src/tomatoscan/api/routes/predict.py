@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tomatoscan.api.core.security import obtenir_utilisateur_courant
 from tomatoscan.api.metrics import (
     errors_total,
+    prediction_confidence,
     prediction_duration_seconds,
     predictions_total,
 )
@@ -143,8 +144,9 @@ async def predire_maladie(
         # Observé même en cas d'erreur pour mesurer les requêtes lentes ou bloquantes
         prediction_duration_seconds.observe(time.perf_counter() - debut)
 
-    # Prédiction réussie : compteur par classe et statut
+    # Prédiction réussie : compteur par classe et statut, distribution de la confiance
     predictions_total.labels(classe=classe, statut="succes").inc()
+    prediction_confidence.observe(confiance)
 
     # Message lisible selon la classe détectée
     if "healthy" in classe.lower():

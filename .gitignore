@@ -38,3 +38,7 @@ docker-compose.local.yml
 
 # Couverture de tests
 .coverage
+
+# Documents de référence de certification (fournis par Satoshi, jamais à committer)
+docs/reac (1).md
+docs/Simplon - DevIA - Referentiel Activites Compétences et évaluation.pdf

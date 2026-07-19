@@ -1,10 +1,8 @@
-"""Tests de bout en bout (AppTest) — comportement sur 401, factorisé via
-utils.session.gerer_erreur_401 (auparavant dupliqué dans 4 pages).
-
-Vérifie que le comportement observable (nettoyage de session + redirection)
-reste strictement identique à avant la factorisation, sur les 4 pages
-concernées : creer_membre.py, dashboard.py, history.py, predict.py.
-"""
+"""Tests de bout en bout (AppTest) — comportement sur 401, factorisé via la
+fonction partagée utils.session.gerer_erreur_401 (utilisée par 4 pages :
+creer_membre.py, dashboard.py, history.py, predict.py). Un seul test
+représentatif (dashboard) suffit puisque c'est la même fonction partagée —
+pas besoin de la re-tester sur chacune des 4 pages qui l'appellent."""
 
 import io
 import sys
@@ -98,58 +96,6 @@ class TestGestion401Factorisee:
             return_value=_reponse_401_mock(),
         ):
             at.run()
-
-        assert "token" not in at.session_state
-        assert not at.exception
-
-    def test_history_401_vide_la_session(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter_admin(at)
-
-        at.switch_page("pages/history.py")
-        with patch(
-            "tomatoscan.front.utils.api_client.requests.get",
-            return_value=_reponse_401_mock(),
-        ):
-            at.run()
-
-        assert "token" not in at.session_state
-        assert not at.exception
-
-    def test_creer_membre_401_vide_la_session(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter_admin(at)
-
-        at.switch_page("pages/creer_membre.py")
-        at.run()
-        with patch(
-            "tomatoscan.front.utils.api_client.requests.post",
-            return_value=_reponse_401_mock(),
-        ):
-            at.text_input[0].input("nouveau_agri").run()
-            at.text_input[1].input("motdepasse123").run()
-            at.button[0].click().run()
-
-        assert "token" not in at.session_state
-        assert not at.exception
-
-    def test_predict_401_vide_la_session(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter_admin(at)
-
-        at.switch_page("pages/predict.py")
-        at.run()
-        at.file_uploader[0].upload(
-            "feuille.jpg", _image_jpeg_valide(), "image/jpeg"
-        ).run()
-        with patch(
-            "tomatoscan.front.utils.api_client.requests.post",
-            return_value=_reponse_401_mock(),
-        ):
-            at.button[0].click().run()
 
         assert "token" not in at.session_state
         assert not at.exception

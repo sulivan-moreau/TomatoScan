@@ -32,9 +32,6 @@ just api
 # Frontend
 just app
 
-# MLflow
-just mlflow
-
 # Docker
 just up
 ```

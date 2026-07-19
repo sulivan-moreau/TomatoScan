@@ -15,6 +15,15 @@ prediction_duration_seconds = Histogram(
     "Durée des prédictions MobileNetV2 en secondes",
 )
 
+# Distribution des scores de confiance des prédictions réussies — métrique de
+# qualité du modèle (pas applicative) : permet de repérer une dérive si la
+# confiance moyenne baisse dans le temps, indépendamment du débit ou des erreurs.
+prediction_confidence = Histogram(
+    "tomatoscan_prediction_confidence",
+    "Distribution des scores de confiance des prédictions MobileNetV2",
+    buckets=[0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 1.0],
+)
+
 # Erreurs rencontrées lors du traitement d'une requête /predict, par type
 errors_total = Counter(
     "tomatoscan_errors_total",

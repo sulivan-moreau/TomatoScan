@@ -45,8 +45,32 @@ async def test_history_sans_token(client):
 
 
 async def test_history_avec_token(client):
-    """GET /predictions/history avec un token valide doit retourner 200 et une liste vide."""
-    token = await _obtenir_token_valide(client)
+    """GET /predictions/history avec un token valide doit retourner 200 et une liste vide.
+
+    Utilise un compte agriculteur fraîchement créé (plutôt que le token admin,
+    qui voit l'historique de TOUS les utilisateurs) pour que l'assertion "liste
+    vide" reste vraie indépendamment des prédictions déjà créées par d'autres
+    tests dans la même session — le token admin seul rendrait ce test fragile
+    à l'ordre d'exécution des fichiers de test.
+    """
+    token_admin = await _obtenir_token_valide(client)
+    reponse_creation = await client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token_admin}"},
+        json={"username": "agriculteur_history_vide", "password": "motdepasse_vide_1"},
+    )
+    assert reponse_creation.status_code == 201, reponse_creation.text
+
+    reponse_login = await client.post(
+        "/auth/token",
+        json={
+            "username": "agriculteur_history_vide",
+            "password": "motdepasse_vide_1",
+        },
+    )
+    assert reponse_login.status_code == 200
+    token = reponse_login.json()["access_token"]
+
     reponse = await client.get(
         "/predictions/history",
         headers={"Authorization": f"Bearer {token}"},
@@ -54,7 +78,6 @@ async def test_history_avec_token(client):
     assert reponse.status_code == 200
     corps = reponse.json()
     assert isinstance(corps, list)
-    # Aucune prédiction n'a été soumise — la liste doit être vide
     assert len(corps) == 0
 
 

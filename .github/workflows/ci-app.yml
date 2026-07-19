@@ -140,6 +140,27 @@ jobs:
         run: uv run alembic upgrade head
 
       # Étape 7 — Exécution de la suite complète (API + modèle + frontend + BDD) avec couverture
-      # Cible : couverture > 80% sur src/tomatoscan/api/
+      # Seuil réaliste basé sur la couverture réellement mesurée sur src/tomatoscan/api/ (~79%) —
+      # --cov-fail-under fait effectivement échouer la CI en dessous, contrairement à un
+      # commentaire d'objectif non appliqué.
       - name: Tests (pytest + couverture)
-        run: uv run pytest tests/ -v --cov=src/tomatoscan/api --cov-report=term-missing
+        run: uv run pytest tests/ -v --cov=src/tomatoscan/api --cov-report=term-missing --cov-fail-under=75
+
+      # Étape 7bis — Seuil de couverture dédié au modèle (C12 — "les tests respectent la
+      # couverture souhaitée établie"). Étape séparée de l'étape 7 : --cov-fail-under
+      # s'applique à l'ensemble des --cov donnés à une même invocation pytest, donc un
+      # seuil par composant (75% API, 85% modèle) demande deux invocations distinctes
+      # plutôt qu'un seuil combiné qui ne voudrait rien dire pris isolément pour l'un ou
+      # l'autre. Seuil réaliste sous la couverture réellement mesurée (~85%).
+      - name: Couverture du modèle (seuil dédié)
+        run: uv run pytest tests/test_model/ --cov=src/tomatoscan/model --cov-report=term-missing --cov-fail-under=80
+
+      # Étape 8 — Build Docker de validation (API + frontend), sans push ni registre.
+      # Ne remplace pas le déploiement réel : Coolify build et déploie lui-même les images
+      # sur le VPS à partir de docker-compose.yml, indépendamment de cette étape. Ce build-ci
+      # sert uniquement à prouver que les deux Dockerfile restent valides à chaque push/PR —
+      # sans ça, une image cassée ne serait détectée qu'au moment du déploiement par Coolify.
+      - name: Build Docker de validation (API + frontend, sans push)
+        run: |
+          docker build -f Dockerfile.api -t tomatoscan-api:ci .
+          docker build -f Dockerfile.front -t tomatoscan-front:ci .

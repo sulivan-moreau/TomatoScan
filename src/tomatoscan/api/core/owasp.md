@@ -38,15 +38,16 @@ TomatoScan est monocompte — il n'y a pas d'objets appartenant à des utilisate
 **Risque :** L'API ne limite pas les appels, permettant le brute-force ou le DoS.
 
 **Mesures appliquées :**
-- Rate limiting `5 requêtes/minute` sur `POST /auth/token` via `slowapi` (protection brute-force)
+- Rate limiting `5 requêtes/minute` par IP sur `POST /auth/token` via `slowapi` (protection contre un débit élevé)
+- Blocage après **5 échecs de connexion consécutifs** sur un même compte, indépendamment du débit (protège contre un attaquant qui espace ses tentatives pour rester sous le seuil par IP) — remis à zéro dès une connexion réussie
 - Taille maximale des images limitée à **5 Mo** sur `POST /predict`
-- Réponse 429 automatique en cas de dépassement
+- Réponse 429 automatique en cas de dépassement (débit ou échecs consécutifs)
 
 **Fichiers :**
 - `src/tomatoscan/api/core/limiter.py` — instance `Limiter` slowapi
-- `src/tomatoscan/api/routes/auth.py` — `@limiteur.limit("5/minute")`
+- `src/tomatoscan/api/routes/auth.py` — `@limiteur.limit("5/minute")` et `_echecs_consecutifs`
 - `src/tomatoscan/api/routes/predict.py` — `TAILLE_MAX_OCTETS = 5 * 1024 * 1024`
-- `src/tomatoscan/api/main.py` — `SlowAPIMiddleware`, handler 429
+- `src/tomatoscan/api/main.py` — `SlowAPIASGIMiddleware`, handler 429
 
 ---
 

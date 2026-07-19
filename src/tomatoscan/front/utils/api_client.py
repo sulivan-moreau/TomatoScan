@@ -1,21 +1,25 @@
 """Client HTTP pour communiquer avec l'API FastAPI de TomatoScan.
 
 Expose :
-- ping()           — vérifie que l'API répond (GET /health)
-- login()          — authentifie l'utilisateur, retourne le token JWT
-- me()             — récupère la session validée côté API (GET /auth/me)
-- is_token_valid() — vérifie localement que le token n'est pas expiré
-- predict()        — envoie une image, retourne le résultat de prédiction
-- get_history()    — récupère l'historique des prédictions de l'utilisateur
-- list_users()     — liste les comptes utilisateurs (admin uniquement)
-- create_user()    — crée un compte agriculteur (admin uniquement)
-- delete_user()    — supprime un compte utilisateur (admin uniquement)
-- fr_label()       — traduit une classe brute du modèle en libellé français
+- ping()                   — vérifie que l'API répond (GET /health)
+- login()                  — authentifie l'utilisateur, retourne le token JWT
+- me()                     — récupère la session validée côté API (GET /auth/me)
+- is_token_valid()         — vérifie localement que le token n'est pas expiré
+- refresh_token()          — réémet un token via POST /auth/refresh
+- renouveler_si_necessaire() — renouvelle silencieusement un token proche de l'expiration
+- predict()                — envoie une image, retourne le résultat de prédiction
+- get_history()            — récupère l'historique des prédictions de l'utilisateur
+- get_reports()            — récupère l'historique d'entraînement du modèle (GET /reports)
+- list_users()             — liste les comptes utilisateurs (admin uniquement)
+- create_user()            — crée un compte agriculteur (admin uniquement)
+- delete_user()            — supprime un compte utilisateur (admin uniquement)
+- fr_label()               — traduit une classe brute du modèle en libellé français
 
 Les erreurs HTTP sont remontées via ApiError, qui porte le code HTTP
 (status_code) afin que les pages puissent réagir précisément (401, 400, 503…).
 """
 
+import html
 import logging
 import os
 import time
@@ -44,6 +48,10 @@ API_URL = os.getenv("TOMATOSCAN_API_URL", "http://localhost:8000").rstrip("/")
 TIMEOUT = 10  # requêtes courtes (health, login)
 TIMEOUT_PREDICT = 30  # l'inférence CNN peut être plus longue
 
+# Renouvellement proactif : si le token expire dans moins de 2 minutes,
+# renouveler_si_necessaire() appelle /auth/refresh silencieusement.
+SEUIL_RENOUVELLEMENT_SECONDES = 120
+
 
 # --- Correspondance classes du modèle → libellés français -------------------
 
@@ -62,10 +70,16 @@ DISEASE_LABELS = {
 
 
 def fr_label(classe: str) -> str:
-    """Renvoie le libellé français d'une classe brute du modèle."""
+    """Renvoie le libellé français d'une classe brute du modèle.
+
+    Le résultat est affiché via st.markdown(unsafe_allow_html=True) dans plusieurs
+    pages : le repli (classe absente de DISEASE_LABELS) est donc échappé avant
+    retour, même si `classe` provient normalement de la propre API (jamais d'une
+    saisie utilisateur libre) — défense en profondeur à coût nul.
+    """
     if not classe:
         return "Inconnu"
-    return DISEASE_LABELS.get(classe, str(classe).replace("_", " "))
+    return DISEASE_LABELS.get(classe, html.escape(str(classe).replace("_", " ")))
 
 
 # --- Classe d'erreur --------------------------------------------------------
@@ -263,6 +277,63 @@ def is_token_valid(token: str | None = None) -> bool:
         return False
 
 
+def temps_restant_avant_expiration(token: str | None) -> float:
+    """Retourne le nombre de secondes avant l'expiration du token JWT.
+
+    Réutilise le décodage de is_token_valid()/_decoder_payload_token — pas de
+    nouvelle logique de décodage. Retourne 0.0 si le token est absent, malformé
+    ou déjà expiré.
+    """
+    if not token:
+        return 0.0
+    try:
+        date_expiration = _decoder_payload_token(token).get("exp", 0)
+        return max(0.0, date_expiration - time.time())
+    except Exception:
+        return 0.0
+
+
+def refresh_token(token: str) -> str:
+    """Réémet un token JWT via POST /auth/refresh.
+
+    Le token courant doit être valide (non expiré) — l'API répond 401 sinon.
+    Retourne le nouveau token. Lève ApiError en cas d'erreur HTTP ou réseau.
+    """
+    reponse = _requete_api(
+        "POST",
+        "/auth/refresh",
+        token=token,
+        message_erreur_reseau="Impossible de joindre le serveur pour renouveler la session.",
+        message_erreur_defaut="Impossible de renouveler la session.",
+    )
+
+    nouveau_token = reponse.json().get("access_token")
+    if not nouveau_token:
+        raise ApiError("Réponse de renouvellement invalide (token manquant).")
+    return nouveau_token
+
+
+def renouveler_si_necessaire(token: str | None) -> str | None:
+    """Renouvelle silencieusement le token s'il expire dans moins de 2 minutes.
+
+    Ne fait rien si le token est absent, déjà expiré (géré ensuite par
+    gerer_erreur_401() au prochain appel API), ou encore valide au-delà du
+    seuil. En cas d'échec du renouvellement (réseau, API indisponible),
+    retourne le token inchangé plutôt que de faire planter la page — le
+    prochain appel API déclenchera normalement le flux 401 si le token a
+    fini par expirer entre-temps.
+    """
+    if not is_token_valid(token):
+        return token
+    if temps_restant_avant_expiration(token) >= SEUIL_RENOUVELLEMENT_SECONDES:
+        return token
+    try:
+        return refresh_token(token)
+    except ApiError:
+        logger.warning("Échec du renouvellement silencieux du token", exc_info=True)
+        return token
+
+
 def predict(octets_image: bytes, nom_fichier: str, token: str) -> dict:
     """Envoie une image à l'API pour analyse et retourne le résultat de prédiction.
 
@@ -363,6 +434,27 @@ def get_history(token: str) -> list[dict]:
         token=token,
         message_erreur_reseau="Impossible de joindre le serveur pour récupérer l'historique.",
         message_erreur_defaut="Impossible de récupérer l'historique.",
+    )
+
+    try:
+        return reponse.json()
+    except ValueError:
+        raise ApiError("Réponse de l'API illisible (JSON attendu).")
+
+
+def get_reports(token: str) -> dict:
+    """Récupère l'historique d'entraînement du modèle via GET /reports.
+
+    Retourne un dict {fichier, nb_epochs, meilleure_val_accuracy, historique}.
+    Lève ApiError (404 si le CSV configuré est introuvable) en cas d'erreur
+    HTTP ou réseau.
+    """
+    reponse = _requete_api(
+        "GET",
+        "/reports",
+        token=token,
+        message_erreur_reseau="Impossible de joindre le serveur pour récupérer le rapport.",
+        message_erreur_defaut="Impossible de récupérer le rapport d'entraînement.",
     )
 
     try:

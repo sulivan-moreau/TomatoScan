@@ -116,7 +116,8 @@ _TAGS_METADATA = [
         "name": "Authentification",
         "description": "Connexion par identifiants (username / password). "
         "Retourne un token JWT Bearer valide pour les endpoints protégés. "
-        "Limité à 5 requêtes/minute par IP.",
+        "Limité à 5 requêtes/minute par IP. `/auth/refresh` réémet un token "
+        "avant son expiration (JWT Bearer requis, token courant encore valide).",
     },
     {
         "name": "Prédiction",

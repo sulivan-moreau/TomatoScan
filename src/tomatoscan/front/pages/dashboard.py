@@ -53,6 +53,28 @@ if grafana_url:
 else:
     st.caption("GRAFANA_URL non configurée dans l'environnement — lien indisponible.")
 
+# --- Rapport d'entraînement du modèle (GET /reports) ---------------------------
+# Section isolée dans son propre try/except : un CSV de rapport absent (404) ne
+# doit pas empêcher l'affichage du reste du tableau de bord (utilisateurs, etc.).
+st.subheader("Entraînement du modèle")
+try:
+    rapport = api_client.get_reports(token)
+except ApiError as erreur:
+    gerer_erreur_401(erreur)
+    st.caption(f"Rapport d'entraînement indisponible : {erreur}")
+else:
+    colonne_epochs, colonne_accuracy = st.columns(2)
+    colonne_epochs.metric("Epochs entraînées", rapport["nb_epochs"])
+    colonne_accuracy.metric(
+        "Meilleure précision (val)", f"{rapport['meilleure_val_accuracy']:.1%}"
+    )
+    with st.expander("Détail par epoch"):
+        st.dataframe(
+            pd.DataFrame(rapport["historique"]),
+            use_container_width=True,
+            hide_index=True,
+        )
+
 # --- Chargement des données ---------------------------------------------------
 try:
     with st.spinner("Chargement des données…"):
