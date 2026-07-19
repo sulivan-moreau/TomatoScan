@@ -109,10 +109,23 @@ def obtenir_utilisateur_courant(charge: dict = Depends(_decoder_charge)) -> str:
 def obtenir_role_courant(charge: dict = Depends(_decoder_charge)) -> str:
     """Dépendance FastAPI : retourne le rôle (claim "role") du token courant.
 
-    Défaut "agriculteur" si absent — ne devrait arriver que pour un token émis
-    avant l'introduction des rôles, aucun ne devrait plus circuler en pratique.
+    Rejette explicitement (401) si le claim est absent — un token sans rôle
+    n'est pas censé exister (créer_token_acces() l'inclut toujours), donc le
+    considérer invalide plutôt que de deviner un rôle par défaut. Un ancien
+    comportement supposait silencieusement "agriculteur" dans ce cas : un
+    admin avec un token sans rôle (bug ailleurs, token corrompu) se faisait
+    alors bloquer sur les routes admin sans explication claire — corrigé ici
+    pour que ce cas produise un 401 explicite ("reconnecte-toi") plutôt qu'un
+    403 trompeur qui laisse penser que l'accès est normalement refusé.
     """
-    return charge.get("role", "agriculteur")
+    role = charge.get("role")
+    if role is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalide ou expiré",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return role
 
 
 def verifier_role_admin(role: str = Depends(obtenir_role_courant)) -> None:

@@ -2,15 +2,10 @@
 from tomatoscan.api.main import app
 
 
-async def test_health_status_200(client):
-    """Vérifie que /health retourne un statut HTTP 200."""
+async def test_health_repond_200_avec_le_bon_corps(client):
+    """Vérifie que /health retourne un statut 200 et {"status": "ok"}."""
     reponse = await client.get("/health")
     assert reponse.status_code == 200
-
-
-async def test_health_body(client):
-    """Vérifie que /health retourne {"status": "ok"}."""
-    reponse = await client.get("/health")
     assert reponse.json() == {"status": "ok"}
 
 

@@ -1,13 +1,9 @@
 """Tests de bout en bout (AppTest) — flux connexion puis navigation par rôle.
 
 Complète tests/test_frontend/test_api_client.py : ici on exécute le vrai
-app.py + les vraies pages via streamlit.testing.v1.AppTest (exécution réelle
-du script, pas un mock de haut niveau), pour vérifier que le rôle mis en
-session au login pilote bien la navigation et les garde-fous de page.
-
-Seul requests.post est mocké (aucun appel réseau réel) — tout le reste
-(session_state, rerun, navigation, garde-fous de page) est exécuté pour de
-vrai par Streamlit.
+app.py + les vraies pages via streamlit.testing.v1.AppTest, pour vérifier que
+le rôle mis en session au login pilote bien la navigation et les garde-fous
+de page. Seul requests.post/get est mocké (aucun appel réseau réel).
 """
 
 import sys
@@ -18,24 +14,18 @@ import jwt
 from streamlit.testing.v1 import AppTest
 
 # `streamlit run` ajoute automatiquement le dossier du script principal à
-# sys.path (streamlit.web.bootstrap._fix_sys_path), ce qui permet aux pages
-# de faire `from utils import api_client`. AppTest n'exécute pas ce chemin de
-# démarrage (il instancie directement un ScriptRunner) — on reproduit donc
-# manuellement cet ajout ici, sinon chaque script exécuté par AppTest lève
-# ModuleNotFoundError: No module named 'utils'.
+# sys.path — AppTest n'exécute pas ce chemin de démarrage, on le reproduit ici.
 _FRONT_DIR = str(Path(__file__).resolve().parents[2] / "src" / "tomatoscan" / "front")
 if _FRONT_DIR not in sys.path:
     sys.path.insert(0, _FRONT_DIR)
 
 APP_PATH = "src/tomatoscan/front/app.py"
-SECRET_TEST = "secret-de-test-sans-rapport-avec-la-cle-reelle"
 
 
 def _jwt(role: str, sub: str = "utilisateur_test") -> str:
-    """Construit un JWT via PyJWT (comme le ferait l'API réelle)."""
     return jwt.encode(
         {"sub": sub, "role": role, "exp": 9_999_999_999},
-        SECRET_TEST,
+        "secret-de-test-sans-rapport-avec-la-cle-reelle",
         algorithm="HS256",
     )
 
@@ -60,7 +50,7 @@ def _connecter(
     at: AppTest, nom_utilisateur: str, mot_de_passe: str, token: str, role: str
 ) -> AppTest:
     """Simule une connexion complète via le vrai formulaire pages/login.py,
-    avec uniquement l'appel réseau (requests.post) mocké."""
+    avec uniquement l'appel réseau mocké."""
     at.switch_page("pages/login.py")
     at.run()
 
@@ -81,168 +71,61 @@ def _connecter(
     return at
 
 
-class TestConnexionAdmin:
-    """Un token contenant role=admin doit donner accès aux pages admin,
-    immédiatement après la connexion (pas besoin d'un second rerun)."""
+def test_admin_a_acces_aux_pages_admin_et_a_la_section_administration():
+    at = AppTest.from_file(APP_PATH)
+    at.run()
+    at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
+    assert at.session_state["role"] == "admin"
 
-    def test_connexion_admin_ne_leve_aucune_exception(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
+    at.switch_page("pages/dashboard.py")
+    at.run()
+    assert not at.exception
+    assert "Accès réservé aux administrateurs." not in [e.value for e in at.error]
 
-        assert not at.exception
+    at.switch_page("pages/creer_membre.py")
+    at.run()
+    assert not at.exception
+    assert "Accès réservé aux administrateurs." not in [e.value for e in at.error]
 
-    def test_admin_accede_au_tableau_de_bord_sans_etre_bloque(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
-
-        at.switch_page("pages/dashboard.py")
-        at.run()
-
-        assert not at.exception
-        messages_erreur = [e.value for e in at.error]
-        assert "Accès réservé aux administrateurs." not in messages_erreur
-
-    def test_admin_accede_a_creer_membre_sans_etre_bloque(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
-
-        at.switch_page("pages/creer_membre.py")
-        at.run()
-
-        assert not at.exception
-        messages_erreur = [e.value for e in at.error]
-        assert "Accès réservé aux administrateurs." not in messages_erreur
-
-    def test_accueil_affiche_bien_la_section_administration_pour_un_admin(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
-
-        at.switch_page("pages/accueil.py")
-        at.run()
-
-        assert not at.exception
-        contenu = " ".join(m.value for m in at.markdown)
-        assert "Administration" in contenu
+    at.switch_page("pages/accueil.py")
+    at.run()
+    assert "Administration" in " ".join(m.value for m in at.markdown)
 
 
-class TestConnexionAgriculteur:
-    """Un token contenant role=agriculteur doit être bloqué sur les pages
-    admin, et ne jamais afficher la section Administration de l'accueil —
-    même immédiatement après la connexion."""
+def test_agriculteur_est_bloque_sur_les_pages_admin():
+    at = AppTest.from_file(APP_PATH)
+    at.run()
+    at = _connecter(at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur")
+    assert at.session_state["role"] == "agriculteur"
 
-    def test_connexion_agriculteur_ne_leve_aucune_exception(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter(
-            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
-        )
+    at.switch_page("pages/dashboard.py")
+    at.run()
+    assert not at.exception
+    assert "Accès réservé aux administrateurs." in [e.value for e in at.error]
 
-        assert not at.exception
+    at.switch_page("pages/creer_membre.py")
+    at.run()
+    assert "Accès réservé aux administrateurs." in [e.value for e in at.error]
 
-    def test_agriculteur_est_bloque_sur_le_tableau_de_bord(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter(
-            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
-        )
-
-        at.switch_page("pages/dashboard.py")
-        at.run()
-
-        assert not at.exception
-        messages_erreur = [e.value for e in at.error]
-        assert "Accès réservé aux administrateurs." in messages_erreur
-
-    def test_agriculteur_est_bloque_sur_creer_membre(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter(
-            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
-        )
-
-        at.switch_page("pages/creer_membre.py")
-        at.run()
-
-        assert not at.exception
-        messages_erreur = [e.value for e in at.error]
-        assert "Accès réservé aux administrateurs." in messages_erreur
-
-    def test_accueil_n_affiche_pas_la_section_administration_pour_un_agriculteur(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter(
-            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
-        )
-
-        at.switch_page("pages/accueil.py")
-        at.run()
-
-        assert not at.exception
-        contenu = " ".join(m.value for m in at.markdown)
-        assert "Administration" not in contenu
+    at.switch_page("pages/accueil.py")
+    at.run()
+    assert "Administration" not in " ".join(m.value for m in at.markdown)
 
 
-class TestImpossibiliteDeDesynchronisation:
-    """Preuve directe que le rôle est bien fixé en session et suit le login.
-    La clé "role" doit exister après connexion et refléter le token utilisé."""
+def test_changer_le_role_dans_le_token_change_immediatement_l_acces_affiche():
+    """Le rôle n'est jamais mis en cache dans une variable séparée : une
+    reconnexion avec un autre rôle, sans logout explicite, doit changer l'accès
+    dès le rerun suivant — preuve qu'aucun état résiduel du compte précédent
+    ne survit."""
+    at = AppTest.from_file(APP_PATH)
+    at.run()
 
-    def test_session_state_contient_le_role_admin_apres_connexion(self):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
+    at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
+    at.switch_page("pages/dashboard.py")
+    at.run()
+    assert "Accès réservé aux administrateurs." not in [e.value for e in at.error]
 
-        assert at.session_state["role"] == "admin"
-
-    def test_session_state_contient_le_role_agriculteur_apres_connexion(
-        self,
-    ):
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-        at = _connecter(
-            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
-        )
-
-        assert at.session_state["role"] == "agriculteur"
-
-    def test_changer_le_role_dans_le_token_change_immediatement_l_acces_affiche(self):
-        """Le rôle n'est jamais mis en cache dans une variable séparée : si un
-        second compte se connecte avec un token différent (autre rôle) sur la
-        même session, sans passer par un logout explicite, l'accès affiché
-        doit refléter EXACTEMENT le nouveau token, dès le premier rerun qui
-        suit — sans dépendre d'un quelconque état résiduel du compte
-        précédent. C'est un test plus strict qu'un simple aller-retour
-        déconnexion/reconnexion : il prouve qu'il n'existe aucune valeur
-        "role" mise en cache qui pourrait survivre au changement de token.
-
-        Note d'implémentation : ce test réutilise directement _connecter()
-        une seconde fois plutôt que de cliquer sur le bouton "Déconnexion" du
-        sidebar — AppTest, via le mécanisme de routage par dossier pages/
-        (PagesManager.uses_pages_directory), n'exécute pas app.py au complet
-        (donc pas sidebar_header()) lors d'un switch_page() vers une page du
-        dossier pages/, seulement le contenu de la page elle-même. Le bouton
-        "Déconnexion" n'est donc pas capturable de façon fiable ici — mais
-        login.py écrase de toute façon token/username sans condition, donc
-        une reconnexion directe est un test strictement équivalent (et même
-        plus strict, puisqu'il ne bénéficie d'aucun `clear()` intermédiaire).
-        """
-        at = AppTest.from_file(APP_PATH)
-        at.run()
-
-        # 1) connexion admin — accès attendu
-        at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
-        at.switch_page("pages/dashboard.py")
-        at.run()
-        assert "Accès réservé aux administrateurs." not in [e.value for e in at.error]
-
-        # 2) reconnexion avec un compte agriculteur, sans logout explicite —
-        # accès attendu bloqué malgré l'admin encore "récent"
-        at = _connecter(
-            at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur"
-        )
-        at.switch_page("pages/dashboard.py")
-        at.run()
-        assert "Accès réservé aux administrateurs." in [e.value for e in at.error]
+    at = _connecter(at, "agriculteur01", "secret", _jwt("agriculteur"), "agriculteur")
+    at.switch_page("pages/dashboard.py")
+    at.run()
+    assert "Accès réservé aux administrateurs." in [e.value for e in at.error]

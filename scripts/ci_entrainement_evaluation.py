@@ -85,12 +85,14 @@ def main() -> None:
     )
     logger.info(f"Rapport généré : {chemin_rapport}")
 
-    # Vérification du seuil de réentraînement (C11) — relit accuracy_test depuis
-    # le rapport tout juste écrit plutôt que de la recalculer, pour ne jamais
-    # diverger de la valeur qui y est réellement consignée.
+    # Vérification du seuil de réentraînement (C11) — relit accuracy_test et
+    # classes_sous_performantes depuis le rapport tout juste écrit plutôt que de
+    # les recalculer, pour ne jamais diverger des valeurs qui y sont consignées.
     with open(chemin_rapport, encoding="utf-8") as fichier_rapport:
-        accuracy_test = json.load(fichier_rapport)["accuracy_test"]
-    declenche = verifier_seuil_reentrainement(accuracy_test)
+        rapport_complet = json.load(fichier_rapport)
+    accuracy_test = rapport_complet["accuracy_test"]
+    classes_sous_performantes = rapport_complet["classes_sous_performantes"]
+    declenche = verifier_seuil_reentrainement(accuracy_test, classes_sous_performantes)
     journaliser_declenchement(accuracy_test, declenche, dossier_rapport=REPORT_DIR)
 
     logger.info("=== Pipeline CI modèle terminé sans erreur ===")

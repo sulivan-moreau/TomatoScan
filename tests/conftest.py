@@ -99,7 +99,10 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
 @pytest.fixture(autouse=True)
 def reinitialiser_limiteur():
-    """Remet à zéro le compteur du rate limiter avant chaque test pour éviter l'accumulation."""
+    """Remet à zéro le rate limiter slowapi (par IP) et le compteur d'échecs
+    consécutifs par compte (routes/auth.py) avant chaque test, pour éviter toute
+    accumulation d'un test à l'autre — les deux mécanismes sont des dicts/stores
+    en mémoire de processus, partagés par tous les tests de la session."""
     try:
         from tomatoscan.api.core.limiter import limiteur
 
@@ -107,4 +110,8 @@ def reinitialiser_limiteur():
     except Exception:
         # Le module n'est pas encore chargé au premier démarrage — ignoré
         pass
+
+    from tomatoscan.api.routes.auth import reinitialiser_echecs_consecutifs
+
+    reinitialiser_echecs_consecutifs()
     yield

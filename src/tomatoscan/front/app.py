@@ -103,6 +103,11 @@ def main():
         st.session_state["session_expiree"] = True
         st.rerun()
 
+    # Renouvellement silencieux si le token est encore valide mais expire bientôt
+    # (< 2 min) — avant tout appel API de la page, une fois par re-run suffit ici
+    if token_actuel:
+        st.session_state.token = api_client.renouveler_si_necessaire(token_actuel)
+
     # Si la session contient un token mais pas de rôle, on considère l'état comme
     # incohérent : le rôle doit toujours être fixé au login. Pas de fallback JWT.
     if token_actuel and "role" not in st.session_state:

@@ -127,8 +127,28 @@ async def test_creation_avec_username_deja_pris_retourne_409(client):
     assert reponse.status_code == 409
 
 
+async def test_creation_avec_mot_de_passe_trop_court_retourne_422(client):
+    """Un mot de passe de moins de 8 caractères doit être rejeté par la validation
+    Pydantic (UserCreate.password, min_length=8) avant toute écriture en BDD."""
+    token_admin = await _token_admin(client)
+
+    reponse = await client.post(
+        "/users",
+        headers={"Authorization": f"Bearer {token_admin}"},
+        json={"username": "agriculteur_mdp_court", "password": "abc123"},
+    )
+    assert reponse.status_code == 422
+
+    # Le compte ne doit pas avoir été créé malgré la tentative
+    reponse_liste = await client.get(
+        "/users", headers={"Authorization": f"Bearer {token_admin}"}
+    )
+    usernames = [u["username"] for u in reponse_liste.json()]
+    assert "agriculteur_mdp_court" not in usernames
+
+
 async def test_admin_ne_peut_pas_se_supprimer_lui_meme(client):
-    """DELETE /users/{id} sur son propre compte admin doit retourner 400."""
+    """DELETE /users/{id} sur le compte admin bootstrap doit retourner 400."""
     token_admin = await _token_admin(client)
     entetes = {"Authorization": f"Bearer {token_admin}"}
 
@@ -137,6 +157,7 @@ async def test_admin_ne_peut_pas_se_supprimer_lui_meme(client):
 
     reponse = await client.delete(f"/users/{mon_id}", headers=entetes)
     assert reponse.status_code == 400
+    assert "bootstrap" in reponse.json()["detail"].lower()
 
 
 @patch(_PREDIRE, return_value=("Tomato_healthy", 0.99))

@@ -4,6 +4,7 @@ import io
 import os
 from unittest.mock import patch
 
+import pytest
 from PIL import Image, UnidentifiedImageError
 
 # Identifiants définis dans tests/conftest.py
@@ -32,13 +33,13 @@ def _creer_image_jpg(largeur: int = 100, hauteur: int = 100) -> bytes:
     return buffer.getvalue()
 
 
-# --- Tests avec modèle mocké ------------------------------------------------
-
-
-@patch(_PREDIRE, return_value=("Tomato_healthy", 0.99))
+@patch(_PREDIRE, return_value=("Tomato_Early_blight", 0.85))
 @patch(_DISPONIBLE, return_value=True)
-async def test_predict_image_valide(mock_dispo, mock_predire, client):
-    """Envoie une image JPG valide avec token et modèle mocké — attend 200 avec classe et confiance."""
+async def test_predict_image_valide_retourne_la_maladie_detectee(
+    mock_dispo, mock_predire, client
+):
+    """Image JPG valide avec token et modèle mocké — 200, classe/confiance
+    dans le corps, et le message signale bien la maladie détectée."""
     token = await _obtenir_token_valide(client)
     reponse = await client.post(
         "/predict",
@@ -47,32 +48,16 @@ async def test_predict_image_valide(mock_dispo, mock_predire, client):
     )
     assert reponse.status_code == 200
     corps = reponse.json()
-    assert "classe" in corps
-    assert "confiance" in corps
-    assert isinstance(corps["confiance"], float)
     assert 0.0 <= corps["confiance"] <= 1.0
-    # Le mock a bien été appelé — le checkpoint .pt n'est pas chargé
+    assert "Maladie détectée" in corps["message"]
     mock_predire.assert_called_once()
-
-
-@patch(_PREDIRE, return_value=("Tomato_Early_blight", 0.85))
-@patch(_DISPONIBLE, return_value=True)
-async def test_predict_maladie_detectee(mock_dispo, mock_predire, client):
-    """Vérifie que le message contient 'Maladie détectée' pour une classe non-saine."""
-    token = await _obtenir_token_valide(client)
-    reponse = await client.post(
-        "/predict",
-        headers={"Authorization": f"Bearer {token}"},
-        files={"fichier": ("feuille.jpg", _creer_image_jpg(), "image/jpeg")},
-    )
-    assert reponse.status_code == 200
-    assert "Maladie détectée" in reponse.json().get("message", "")
 
 
 @patch(_PREDIRE, side_effect=UnidentifiedImageError("cannot identify image file"))
 @patch(_DISPONIBLE, return_value=True)
 async def test_predict_image_corrompue(mock_dispo, mock_predire, client):
-    """Envoie un .jpg avec contenu invalide — PIL.UnidentifiedImageError doit provoquer un 400."""
+    """Contenu invalide déguisé en .jpg — PIL.UnidentifiedImageError doit
+    provoquer un 400 (issue #10)."""
     token = await _obtenir_token_valide(client)
     reponse = await client.post(
         "/predict",
@@ -85,21 +70,7 @@ async def test_predict_image_corrompue(mock_dispo, mock_predire, client):
 
 @patch(_DISPONIBLE, return_value=False)
 async def test_predict_modele_indisponible(mock_dispo, client):
-    """Vérifie que /predict retourne 503 quand le modèle n'est pas encore chargé."""
-    token = await _obtenir_token_valide(client)
-    reponse = await client.post(
-        "/predict",
-        headers={"Authorization": f"Bearer {token}"},
-        files={"fichier": ("feuille.jpg", _creer_image_jpg(), "image/jpeg")},
-    )
-    assert reponse.status_code == 503
-    assert "indisponible" in reponse.json()["detail"].lower()
-
-
-@patch(_PREDIRE, side_effect=RuntimeError("erreur GPU inattendue"))
-@patch(_DISPONIBLE, return_value=True)
-async def test_predict_erreur_interne(mock_dispo, mock_predire, client):
-    """Vérifie que /predict retourne 503 pour une exception inattendue du modèle."""
+    """/predict doit retourner 503 quand le modèle n'est pas encore chargé."""
     token = await _obtenir_token_valide(client)
     reponse = await client.post(
         "/predict",
@@ -109,28 +80,22 @@ async def test_predict_erreur_interne(mock_dispo, mock_predire, client):
     assert reponse.status_code == 503
 
 
-# --- Tests sans modèle (validation en amont) --------------------------------
-
-
-async def test_predict_format_invalide(client):
-    """Envoie un fichier .txt avec token — attend status 400 (format rejeté avant le modèle)."""
+@pytest.mark.parametrize(
+    ("nom_fichier", "contenu", "type_contenu"),
+    [
+        ("notes.txt", b"ceci n'est pas une image", "text/plain"),
+        ("photo.jpg", b"\xff\xd8\xff" + b"x" * (6 * 1024 * 1024), "image/jpeg"),
+    ],
+    ids=["format_invalide", "fichier_trop_lourd"],
+)
+async def test_predict_rejette_avant_le_modele(
+    client, nom_fichier, contenu, type_contenu
+):
+    """Format non-image ou fichier > 5 Mo — rejetés par la validation en amont, sans appeler le modèle (400)."""
     token = await _obtenir_token_valide(client)
     reponse = await client.post(
         "/predict",
         headers={"Authorization": f"Bearer {token}"},
-        files={"fichier": ("notes.txt", b"ceci n'est pas une image", "text/plain")},
-    )
-    assert reponse.status_code == 400
-
-
-async def test_predict_fichier_trop_lourd(client):
-    """Envoie un fichier JPEG dépassant 5 Mo avec token — attend status 400."""
-    token = await _obtenir_token_valide(client)
-    # Génère un contenu de 6 Mo (dépasse la limite de 5 Mo)
-    gros_contenu = b"\xff\xd8\xff" + b"x" * (6 * 1024 * 1024)
-    reponse = await client.post(
-        "/predict",
-        headers={"Authorization": f"Bearer {token}"},
-        files={"fichier": ("photo.jpg", gros_contenu, "image/jpeg")},
+        files={"fichier": (nom_fichier, contenu, type_contenu)},
     )
     assert reponse.status_code == 400

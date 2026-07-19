@@ -4,6 +4,10 @@ Lignes visées :
 - 33-34 : creer_token_acces() avec SECRET_KEY absente → RuntimeError
 - 60-61 : obtenir_utilisateur_courant() avec SECRET_KEY absente → 401
 - 67    : obtenir_utilisateur_courant() avec token sans champ 'sub' → 401
+- obtenir_role_courant() avec token sans champ 'role' → 401 (pas un rôle
+  "agriculteur" deviné par défaut — bug réel observé en préprod : un admin
+  avec un token sans rôle se faisait bloquer en 403 comme un agriculteur,
+  sans explication claire)
 """
 
 import os
@@ -66,5 +70,25 @@ async def test_token_sans_sub(client):
     reponse = await client.get(
         "/predictions/history",
         headers={"Authorization": f"Bearer {token_sans_sub}"},
+    )
+    assert reponse.status_code == 401
+
+
+async def test_token_sans_role_rejete_en_401_pas_devine_en_agriculteur(client):
+    """JWT signé avec une clé valide, avec 'sub' mais sans 'role' → 401 sur une
+    route admin (/users), pas un 403 "réservé aux administrateurs" qui
+    laisserait croire à tort que l'utilisateur est simplement un agriculteur."""
+    cle_secrete = os.getenv("SECRET_KEY", "cle_secrete_test_uniquement")
+    algorithme = os.getenv("ALGORITHM", "HS256")
+
+    token_sans_role = jwt.encode(
+        {"sub": NOM_ADMIN, "exp": int(time.time()) + 3600},
+        cle_secrete,
+        algorithm=algorithme,
+    )
+
+    reponse = await client.get(
+        "/users",
+        headers={"Authorization": f"Bearer {token_sans_role}"},
     )
     assert reponse.status_code == 401

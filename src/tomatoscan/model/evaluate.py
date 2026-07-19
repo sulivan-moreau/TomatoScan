@@ -26,6 +26,12 @@ from tomatoscan.model.train import construire_modele, selectionner_device
 # avant qu'elle devienne critique pour l'usage terrain.
 SEUIL_ACCURACY_REENTRAINEMENT = 0.85
 
+# Seuil de F1-score par classe en dessous duquel une classe est considérée
+# sous-performante (un F1 par classe capture un problème sur une maladie
+# rare que l'accuracy globale peut masquer — important pour un outil de
+# diagnostic où rater une maladie pèse plus qu'une fausse alerte).
+SEUIL_F1_CLASSE_SOUS_PERFORMANTE = 0.80
+
 
 def charger_checkpoint(chemin_modele: str, nombre_classes: int) -> tuple:
     """
@@ -152,7 +158,7 @@ def generer_rapport(
     - accuracy globale sur le test set
     - meilleure accuracy de validation et epoch correspondante
     - métriques par classe (precision, recall, f1)
-    - classes sous-performantes (f1 < 0.80)
+    - classes sous-performantes (f1 < SEUIL_F1_CLASSE_SOUS_PERFORMANTE)
     Retourne le chemin du rapport généré.
     """
     os.makedirs(dossier_rapport, exist_ok=True)
@@ -173,7 +179,7 @@ def generer_rapport(
     classes_sous_performantes = [
         classe
         for classe in noms_classes
-        if rapport_classification[classe]["f1-score"] < 0.80
+        if rapport_classification[classe]["f1-score"] < SEUIL_F1_CLASSE_SOUS_PERFORMANTE
     ]
 
     rapport_complet = {
@@ -200,7 +206,8 @@ def generer_rapport(
 
         if classes_sous_performantes:
             logger.warning(
-                f"Classes sous-performantes (F1 < 80%) : {classes_sous_performantes}"
+                f"Classes sous-performantes (F1 < {SEUIL_F1_CLASSE_SOUS_PERFORMANTE:.0%}) : "
+                f"{classes_sous_performantes}"
             )
 
         return chemin_rapport
@@ -211,13 +218,16 @@ def generer_rapport(
 
 
 def verifier_seuil_reentrainement(
-    accuracy_test: float, seuil: float = SEUIL_ACCURACY_REENTRAINEMENT
+    accuracy_test: float,
+    classes_sous_performantes: list,
+    seuil_accuracy: float = SEUIL_ACCURACY_REENTRAINEMENT,
 ) -> bool:
-    """Retourne True si l'accuracy sur le jeu de test est sous le seuil de
-    réentraînement — un déclencheur pur (aucun effet de bord), pour rester
-    facilement testable indépendamment de la journalisation.
+    """Retourne True si un réentraînement est recommandé : soit l'accuracy
+    globale passe sous le seuil, soit au moins une classe est sous-performante
+    en F1 — ce second cas capture une dérive sur une classe précise que
+    l'accuracy globale peut masquer. Déclencheur pur (aucun effet de bord).
     """
-    return accuracy_test < seuil
+    return accuracy_test < seuil_accuracy or len(classes_sous_performantes) > 0
 
 
 def journaliser_declenchement(
