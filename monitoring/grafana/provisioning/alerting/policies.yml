@@ -1,30 +1,12 @@
-# Provisioning de la politique de notification Grafana Unified Alerting
-#
-# Définit l'arbre de routage racine : toute alerte déclenchée qui ne correspond
-# à aucune route plus spécifique part vers le point de contact "email-tomatoscan"
-# (défini dans contact_points.yml).
-#
-# Aucune route enfant n'est déclarée : le projet n'a qu'une seule règle d'alerte
-# et un seul destinataire — un routage par sévérité ou par équipe serait de la
-# complexité sans usage réel ici.
-#
-# Attention : ce fichier remplace la politique racine par défaut de Grafana. Une
-# politique provisionnée n'est plus modifiable depuis l'interface web, ce qui est
-# voulu (toute la configuration reste versionnée dans ce dépôt).
+# Politique de notification par défaut — route toutes les alertes (une seule
+# règle existe actuellement, voir alertes.yml) vers le point de contact e-mail.
+# Un seul point de contact suffit pour ce projet : pas besoin de règles de
+# routage plus fines (par sévérité, par équipe, etc.) tant qu'une seule alerte existe.
 
 apiVersion: 1
 
 policies:
   - orgId: 1
-    # Destination par défaut de toutes les alertes non routées ailleurs
     receiver: email-tomatoscan
-    # Regroupement des notifications par dossier et par nom de règle
     group_by:
-      - grafana_folder
       - alertname
-    # Attente avant le premier envoi d'un nouveau groupe d'alertes
-    group_wait: 30s
-    # Attente avant d'envoyer les nouvelles alertes d'un groupe déjà notifié
-    group_interval: 5m
-    # Rappel périodique tant que l'alerte reste active
-    repeat_interval: 4h

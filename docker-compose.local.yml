@@ -1,40 +1,29 @@
-# Docker Compose — surcouche de démonstration locale (bac à sable)
-#
-# Rôle : publier vers l'hôte les ports de Prometheus et Grafana, qui ne le sont
-# jamais dans docker-compose.yml. En préprod et en production (Coolify sur le VPS
-# OVH), ces deux services restent volontairement joignables uniquement depuis le
-# réseau Docker interne "coolify" — les exposer publiquement offrirait un accès
-# non authentifié aux métriques (Prometheus n'a aucune authentification) et une
-# surface d'attaque supplémentaire sur l'interface Grafana.
-#
-# Ce fichier n'est JAMAIS chargé en préprod ni en production : Coolify utilise
-# docker-compose.yml (+ docker-compose.override.yml sur develop) et ignore
-# celui-ci, qui doit être demandé explicitement avec -f.
-#
-# Utilisation (le réseau externe "coolify" doit exister au préalable :
-# "docker network create coolify") :
-#
-#   docker compose -f docker-compose.yml -f docker-compose.local.yml up
-#
-# Note : passer -f désactive le chargement automatique de
-# docker-compose.override.yml (préprod). Pour reproduire la préprod en local,
-# l'ajouter explicitement :
-#
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
-#                  -f docker-compose.local.yml up
-#
-# Accès obtenus :
-#   - Prometheus : http://localhost:9090
-#   - Grafana    : http://localhost:3000 (admin / $GRAFANA_PASSWORD)
-
 services:
+  # ─── Surcharge locale de l'API : force une DATABASE_URL compatible avec le
+  # réseau Docker (hôte "postgres", pilote async asyncpg), au cas où le
+  # DATABASE_URL du .env local pointe vers autre chose (SQLite local, hôte
+  # différent) pour un usage hors Docker. Réutilise les identifiants déjà
+  # présents dans .env (POSTGRES_USER/PASSWORD/DB), jamais de valeur en dur.
+  api:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
 
-  # ─── Prometheus exposé sur l'hôte (démonstration locale uniquement) ──────────
   prometheus:
+    extends:
+      file: docker-compose.yml
+      service: prometheus
     ports:
       - "9090:9090"
 
-  # ─── Grafana exposé sur l'hôte (démonstration locale uniquement) ─────────────
   grafana:
+    extends:
+      file: docker-compose.yml
+      service: grafana
     ports:
       - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+
+networks:
+  coolify:
+    external: true

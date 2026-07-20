@@ -24,7 +24,7 @@ import pandas as pd
 import streamlit as st
 
 from utils import api_client
-from utils.api_client import ApiError
+from utils.api_client import ApiError, fr_label
 from utils.session import gerer_erreur_401
 
 # Éco-conception : TTL du cache des données du tableau de bord. 60 s est un bon
@@ -119,6 +119,52 @@ else:
             use_container_width=True,
             hide_index=True,
         )
+
+# --- Performance du modèle sur le jeu de test (GET /reports/evaluation) --------
+# Section isolée dans son propre try/except, comme celle ci-dessus : un rapport
+# d'évaluation pas encore généré (404) ne doit pas casser le reste de la page.
+st.subheader("Performance du modèle (jeu de test)")
+try:
+    evaluation = api_client.get_evaluation(token)
+except ApiError as erreur:
+    gerer_erreur_401(erreur)
+    st.caption(f"Rapport d'évaluation indisponible : {erreur}")
+else:
+    colonne_test, colonne_val = st.columns(2)
+    colonne_test.metric("Test accuracy", f"{evaluation['accuracy_test']:.0%}")
+    colonne_val.metric(
+        "Val. accuracy", f"{evaluation['meilleure_accuracy_validation']:.0%}"
+    )
+
+    # rapport_classification mélange les classes avec les lignes agrégées
+    # "accuracy" (un float, pas un dict), "macro avg", "weighted avg" — on ne
+    # garde que les vraies classes pour le tableau F1 par classe.
+    lignes_classes = [
+        {
+            "Classe": fr_label(classe),
+            "Précision": f"{metriques['precision']:.1%}",
+            "Rappel": f"{metriques['recall']:.1%}",
+            "F1": f"{metriques['f1-score']:.1%}",
+        }
+        for classe, metriques in evaluation["rapport_classification"].items()
+        if isinstance(metriques, dict)
+    ]
+    st.dataframe(
+        pd.DataFrame(lignes_classes), use_container_width=True, hide_index=True
+    )
+
+    if evaluation["classes_sous_performantes"]:
+        st.warning(
+            "Classes sous-performantes (F1 bas) : "
+            + ", ".join(fr_label(c) for c in evaluation["classes_sous_performantes"])
+        )
+
+    try:
+        image_matrice = api_client.get_confusion_matrix(token)
+    except ApiError as erreur:
+        st.caption(f"Matrice de confusion indisponible : {erreur}")
+    else:
+        st.image(image_matrice, caption="Matrice de confusion (normalisée)")
 
 # --- Chargement des données ---------------------------------------------------
 try:

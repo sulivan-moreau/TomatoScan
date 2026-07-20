@@ -21,6 +21,8 @@ from tomatoscan.front.utils.api_client import (
     _decoder_payload_token,
     create_user,
     delete_user,
+    get_confusion_matrix,
+    get_evaluation,
     get_history,
     get_reports,
     is_token_valid,
@@ -219,6 +221,38 @@ class TestPing:
         mock_get.side_effect = requests.ConnectionError("connexion refusée")
 
         assert ping() is False
+
+
+class TestGetEvaluation:
+    """GET /reports/evaluation."""
+
+    @patch("tomatoscan.front.utils.api_client.requests.get")
+    def test_get_evaluation_retourne_le_rapport(self, mock_get):
+        mock_get.return_value = _reponse_mock(
+            200, {"accuracy_test": 0.9355, "meilleure_accuracy_validation": 0.9455}
+        )
+
+        evaluation = get_evaluation("mon.token.valide")
+
+        assert evaluation["accuracy_test"] == 0.9355
+        args, kwargs = mock_get.call_args
+        assert args[0] == f"{API_URL}/reports/evaluation"
+
+
+class TestGetConfusionMatrix:
+    """GET /reports/confusion-matrix."""
+
+    @patch("tomatoscan.front.utils.api_client.requests.get")
+    def test_get_confusion_matrix_retourne_les_octets_de_l_image(self, mock_get):
+        reponse = _reponse_mock(200, {})
+        reponse.content = b"\x89PNG\r\n\x1a\nfaux-contenu"
+        mock_get.return_value = reponse
+
+        image = get_confusion_matrix("mon.token.valide")
+
+        assert image == b"\x89PNG\r\n\x1a\nfaux-contenu"
+        args, kwargs = mock_get.call_args
+        assert args[0] == f"{API_URL}/reports/confusion-matrix"
 
 
 class TestPredict:

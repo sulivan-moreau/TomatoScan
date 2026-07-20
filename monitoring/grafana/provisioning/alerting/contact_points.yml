@@ -1,30 +1,20 @@
-# Provisioning des points de contact Grafana Unified Alerting
+# Point de contact pour les alertes Grafana Unified Alerting — canal e-mail.
 #
-# Sans ce fichier, la règle d'alerte de alertes.yml passe bien à l'état "firing"
-# mais ne notifie personne : Grafana n'a aucun destinataire à qui router.
-#
-# L'adresse de destination n'est jamais écrite en dur ici : elle est lue depuis
-# la variable d'environnement ALERTES_EMAIL_DESTINATAIRE, passée au conteneur
-# grafana par docker-compose.yml (valeur définie dans .env, voir .env.example).
-# Grafana interpole les variables d'environnement dans les fichiers de
-# provisioning au démarrage.
-#
-# L'envoi effectif dépend aussi de la configuration SMTP (GF_SMTP_*) : sans
-# elle, Grafana journalise une erreur d'envoi explicite plutôt que d'échouer
-# silencieusement.
+# L'adresse ci-dessous est un espace réservé à remplacer avant tout déploiement
+# réel : ce fichier est versionné (pas de secret dedans), seuls les identifiants
+# SMTP (hôte, utilisateur, mot de passe) sont sensibles et lus depuis les
+# variables d'environnement GF_SMTP_* du service grafana (voir docker-compose.yml
+# et .env.example) — jamais écrits en dur ici.
 
 apiVersion: 1
 
 contactPoints:
   - orgId: 1
-    # Nom référencé par la politique de routage (policies.yml)
     name: email-tomatoscan
     receivers:
-      - uid: email-tomatoscan
+      - uid: tomatoscan-email-receiver
         type: email
         settings:
-          # Destinataire unique — plusieurs adresses se sépareraient par ";"
-          addresses: ${ALERTES_EMAIL_DESTINATAIRE}
-          # Un e-mail par alerte plutôt qu'un e-mail groupé : une seule règle
-          # d'alerte existe, le groupage n'apporterait rien
-          singleEmail: false
+          # À REMPLACER par la vraie adresse de notification avant déploiement
+          addresses: alerte-tomatoscan@a-remplacer.fr
+          singleEmail: true

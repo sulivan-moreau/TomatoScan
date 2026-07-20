@@ -1,9 +1,6 @@
 """
-Schémas Pydantic pour les endpoints /reports — historique d'entraînement et
-rapport d'évaluation du modèle MobileNetV2.
+Schémas Pydantic pour l'endpoint GET /reports — historique d'entraînement MobileNetV2.
 """
-
-from typing import Any
 
 from pydantic import BaseModel
 
@@ -32,22 +29,21 @@ class RapportResponse(BaseModel):
 
 
 class EvaluationResponse(BaseModel):
-    """
-    Réponse de l'endpoint GET /reports/evaluation — rapport d'évaluation finale
-    du modèle sur le jeu de test, tel que produit par model/evaluate.py.
+    """Réponse de l'endpoint /reports/evaluation — rapport d'évaluation sur le
+    jeu de test, tel que généré par evaluate.py::generer_rapport().
+
+    rapport_classification n'est pas typé plus précisément que dict : il
+    contient un mélange hétérogène de clés (un nom de classe → un dict
+    precision/recall/f1-score/support, mais aussi "accuracy" → un float brut,
+    et "macro avg"/"weighted avg" → un dict) — reflet direct de la sortie de
+    sklearn.metrics.classification_report(output_dict=True), pas la peine de
+    la re-modéliser ici, le frontend filtre les clés utiles à l'affichage.
     """
 
-    # Date de génération du rapport d'évaluation (ISO)
     date: str
-    # Nom de l'architecture évaluée (ex. MobileNetV2)
     modele: str
-    # Epoch du meilleur checkpoint retenu (sur la validation)
     meilleure_epoch: int
-    # Meilleure accuracy de validation atteinte
     meilleure_accuracy_validation: float
-    # Accuracy mesurée sur le jeu de test (métrique de référence du modèle)
     accuracy_test: float
-    # Classes dont le F1-score passe sous le seuil (liste vide si aucune)
     classes_sous_performantes: list[str]
-    # Rapport de classification par classe (precision / recall / f1-score / support)
-    rapport_classification: dict[str, Any]
+    rapport_classification: dict

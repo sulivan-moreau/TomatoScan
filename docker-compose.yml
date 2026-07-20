@@ -107,16 +107,14 @@ services:
       # Mot de passe admin Grafana — défini dans .env, jamais en dur ici
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      # SMTP — indispensable pour que le point de contact e-mail des alertes
-      # (provisioning/alerting/contact_points.yml) puisse réellement notifier.
-      GF_SMTP_ENABLED: ${GF_SMTP_ENABLED:-false}
+      # SMTP — nécessaire pour que le point de contact e-mail des alertes
+      # (monitoring/grafana/provisioning/alerting/contact_points.yml) envoie
+      # réellement les notifications. Variables lues depuis .env, jamais en dur.
+      GF_SMTP_ENABLED: "${GF_SMTP_ENABLED:-false}"
       GF_SMTP_HOST: ${GF_SMTP_HOST:-}
       GF_SMTP_USER: ${GF_SMTP_USER:-}
       GF_SMTP_PASSWORD: ${GF_SMTP_PASSWORD:-}
-      GF_SMTP_FROM_ADDRESS: ${GF_SMTP_FROM_ADDRESS:-alertes@tomatoscan.local}
-      GF_SMTP_FROM_NAME: ${GF_SMTP_FROM_NAME:-TomatoScan Alertes}
-      # Destinataire des alertes, consommé par contact_points.yml
-      ALERTES_EMAIL_DESTINATAIRE: ${ALERTES_EMAIL_DESTINATAIRE:-admin@example.com}
+      GF_SMTP_FROM_ADDRESS: ${GF_SMTP_FROM_ADDRESS:-}
     volumes:
       # Volume persistant pour les dashboards et plugins Grafana
       - grafana_data:/var/lib/grafana

@@ -3,8 +3,9 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
 from prometheus_client import make_asgi_app
 from slowapi.errors import RateLimitExceeded
@@ -198,6 +199,24 @@ app = FastAPI(
 app.state.limiter = limiteur
 # Réponse 429 en JSON custom (gestionnaire_limite_atteinte) au lieu du texte brut slowapi
 app.add_exception_handler(RateLimitExceeded, gestionnaire_limite_atteinte)
+
+
+@app.exception_handler(Exception)
+async def gestionnaire_erreur_generique(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Filet de sécurité : logue toute exception non prévue (bug réel, pas une
+    HTTPException volontaire comme un 401/404/503) avant de renvoyer un 500
+    générique — sans ça, un crash inattendu ne laisserait aucune trace dans les
+    logs. Starlette ne passe ici que les exceptions sans handler plus spécifique :
+    les HTTPException levées volontairement dans les routes gardent leur propre
+    code de statut, inchangé.
+    """
+    logger.error(f"Erreur non gérée sur {request.method} {request.url.path} : {exc}")
+    return JSONResponse(
+        status_code=500, content={"detail": "Erreur interne du serveur."}
+    )
+
 
 # Middlewares — ajoutés du plus interne au plus externe (dernier ajouté = premier exécuté)
 # SlowAPIASGIMiddleware (ASGI pur, fourni par slowapi) plutôt que SlowAPIMiddleware

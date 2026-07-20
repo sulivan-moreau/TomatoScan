@@ -1,15 +1,16 @@
 """
-Routes /reports — exposent les rapports du modèle MobileNetV2 :
-  - GET /reports             : historique d'entraînement (CSV)
-  - GET /reports/evaluation  : rapport d'évaluation finale sur le jeu de test (JSON)
-Toutes deux protégées par JWT (Depends(obtenir_utilisateur_courant)).
+Routes GET /reports — historique d'entraînement, rapport d'évaluation et
+matrice de confusion du modèle MobileNetV2. Toutes protégées par JWT
+(Depends(obtenir_utilisateur_courant)).
 """
 
 import csv
+import glob
 import json
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from loguru import logger
 
 from tomatoscan.api.core.security import obtenir_utilisateur_courant
@@ -24,8 +25,10 @@ router = APIRouter(tags=["Rapports"])
 # Chemin par défaut si REPORTS_PATH n'est pas défini dans .env
 CHEMIN_DEFAUT = "models/historique_20260624_161841.csv"
 
-# Chemin par défaut du rapport d'évaluation si EVALUATION_PATH n'est pas défini
-CHEMIN_EVALUATION_DEFAUT = "docs/rapport_evaluation_20260624_163236.json"
+# Dossier où evaluate.py::generer_rapport() écrit les rapports d'évaluation
+# (rapport_evaluation_<horodatage>.json) et la matrice de confusion
+# (confusion_matrix.png, nom fixe, écrasée à chaque évaluation).
+DOSSIER_EVALUATION_DEFAUT = "./docs"
 
 
 @router.get(
@@ -108,14 +111,23 @@ def obtenir_rapport(
     )
 
 
+def _chemin_dernier_rapport_evaluation() -> str | None:
+    """Retourne le chemin du rapport d'évaluation le plus récent (tri sur le
+    nom horodaté, rapport_evaluation_<YYYYmmdd_HHMMSS>.json), ou None si
+    aucun n'existe. Un nouveau fichier est écrit à chaque évaluation
+    (evaluate.py::generer_rapport()) — jamais écrasé, contrairement à la
+    matrice de confusion."""
+    dossier = os.getenv("EVALUATION_REPORT_DIR", DOSSIER_EVALUATION_DEFAUT)
+    fichiers = sorted(glob.glob(os.path.join(dossier, "rapport_evaluation_*.json")))
+    return fichiers[-1] if fichiers else None
+
+
 @router.get(
     "/reports/evaluation",
     response_model=EvaluationResponse,
     responses={
         401: {"description": "Token invalide, expiré ou absent."},
-        404: {
-            "description": "Rapport d'évaluation introuvable au chemin configuré (EVALUATION_PATH)."
-        },
+        404: {"description": "Aucun rapport d'évaluation trouvé."},
         500: {"description": "Erreur de lecture ou format JSON invalide."},
     },
 )
@@ -123,42 +135,51 @@ def obtenir_evaluation(
     _utilisateur: str = Depends(obtenir_utilisateur_courant),
 ) -> EvaluationResponse:
     """
-    Retourne le rapport d'évaluation finale du modèle MobileNetV2 sur le jeu de test.
+    Retourne le dernier rapport d'évaluation du modèle sur le jeu de test
+    (accuracy test, meilleure accuracy de validation, précision/rappel/F1 par
+    classe) — généré par `evaluate.py::generer_rapport()`.
 
-    **Authentification requise** : `Authorization: Bearer <token>` — obtenu via `POST /auth/token`.
-
-    Lit le fichier JSON défini par `EVALUATION_PATH` dans `.env` (produit par
-    `model/evaluate.py`). Contient l'accuracy de test, la meilleure epoch, les
-    classes sous-performantes et le rapport de classification par classe.
-
-    **Codes d'erreur** :
-    - `401` : token manquant ou expiré
-    - `404` : rapport introuvable au chemin configuré dans `EVALUATION_PATH`
-    - `500` : erreur de lecture ou format JSON invalide
+    **Authentification requise** : `Authorization: Bearer <token>`.
     """
-    chemin_json = os.getenv("EVALUATION_PATH", CHEMIN_EVALUATION_DEFAUT)
-
-    # Vérification de l'existence du fichier avant lecture
-    if not os.path.isfile(chemin_json):
-        logger.warning(f"Rapport d'évaluation introuvable : {chemin_json}")
+    chemin_rapport = _chemin_dernier_rapport_evaluation()
+    if chemin_rapport is None:
+        logger.warning("Aucun rapport d'évaluation trouvé (EVALUATION_REPORT_DIR).")
         raise HTTPException(
-            status_code=404,
-            detail=f"Rapport d'évaluation introuvable : {chemin_json}",
+            status_code=404, detail="Aucun rapport d'évaluation trouvé."
         )
 
-    # Lecture et validation du JSON d'évaluation
     try:
-        with open(chemin_json, encoding="utf-8") as fichier:
-            donnees = json.load(fichier)
-        rapport = EvaluationResponse(**donnees)
+        with open(chemin_rapport, encoding="utf-8") as fichier:
+            return EvaluationResponse(**json.load(fichier))
     except Exception as erreur:
-        logger.error(f"Erreur de lecture du rapport {chemin_json} : {erreur}")
+        logger.error(
+            f"Erreur de lecture du rapport d'évaluation {chemin_rapport} : {erreur}"
+        )
         raise HTTPException(
             status_code=500,
             detail="Erreur lors de la lecture du rapport d'évaluation.",
         )
 
-    logger.info(
-        f"Rapport d'évaluation lu : {chemin_json}, accuracy_test={rapport.accuracy_test:.4f}"
-    )
-    return rapport
+
+@router.get(
+    "/reports/confusion-matrix",
+    responses={
+        401: {"description": "Token invalide, expiré ou absent."},
+        404: {"description": "Matrice de confusion introuvable."},
+    },
+)
+def obtenir_matrice_confusion(
+    _utilisateur: str = Depends(obtenir_utilisateur_courant),
+) -> FileResponse:
+    """
+    Retourne l'image PNG de la matrice de confusion normalisée, générée lors
+    de la dernière évaluation du modèle (`evaluate.py::afficher_confusion_matrix()`).
+
+    **Authentification requise** : `Authorization: Bearer <token>`.
+    """
+    dossier = os.getenv("EVALUATION_REPORT_DIR", DOSSIER_EVALUATION_DEFAUT)
+    chemin_image = os.path.join(dossier, "confusion_matrix.png")
+    if not os.path.isfile(chemin_image):
+        logger.warning(f"Matrice de confusion introuvable : {chemin_image}")
+        raise HTTPException(status_code=404, detail="Matrice de confusion introuvable.")
+    return FileResponse(chemin_image, media_type="image/png")

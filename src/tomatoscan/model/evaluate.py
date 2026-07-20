@@ -93,8 +93,15 @@ def afficher_confusion_matrix(
     labels_reels: list,
     predictions: list,
     noms_classes: list,
+    chemin_sortie: str | None = None,
 ):
-    """Affiche la confusion matrix normalisée avec matplotlib."""
+    """Affiche la confusion matrix normalisée avec matplotlib.
+
+    Si chemin_sortie est fourni, l'image est sauvegardée à ce chemin (utilisé
+    par l'API pour servir la matrice sur GET /reports/confusion-matrix) au lieu
+    d'être affichée à l'écran — plt.show() ne produit rien d'utilisable en
+    dehors d'une exécution locale interactive.
+    """
     # labels=range(...) force une matrice de taille fixe (len(noms_classes)) même si
     # une classe n'apparaît ni dans labels_reels ni dans predictions pour ce batch —
     # sans ça, la matrice se réduit aux classes réellement présentes et désynchronise
@@ -141,8 +148,13 @@ def afficher_confusion_matrix(
     ax.set_title("Matrice de confusion — MobileNetV2 TomatoScan")
 
     plt.tight_layout()
-    plt.show()
-    logger.info("Matrice de confusion affichée")
+    if chemin_sortie:
+        fig.savefig(chemin_sortie, bbox_inches="tight")
+        plt.close(fig)
+        logger.info(f"Matrice de confusion sauvegardée : {chemin_sortie}")
+    else:
+        plt.show()
+        logger.info("Matrice de confusion affichée")
 
 
 def generer_rapport(
@@ -315,4 +327,13 @@ if __name__ == "__main__":
         meilleure_accuracy,
     )
     print(f"Rapport généré : {chemin_rapport}")
-    afficher_confusion_matrix(labels_reels, predictions, noms_classes)
+    # Sauvegardée dans le même dossier que le rapport JSON, nom fixe (écrasé à
+    # chaque évaluation) — l'API sert toujours la dernière matrice disponible.
+    afficher_confusion_matrix(
+        labels_reels,
+        predictions,
+        noms_classes,
+        chemin_sortie=os.path.join(
+            os.path.dirname(chemin_rapport), "confusion_matrix.png"
+        ),
+    )
