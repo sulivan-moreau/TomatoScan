@@ -38,7 +38,12 @@ Makefile
 notebooks/
 
 # ─── Documentation ────────────────────────────────────────────────────────────
-docs/
+# docs/ est exclu de l'image SAUF les artefacts d'évaluation servis par l'API :
+# /reports/evaluation lit rapport_evaluation_*.json et /reports/confusion-matrix
+# lit confusion_matrix.png (EVALUATION_REPORT_DIR = ./docs par défaut).
+docs/*
+!docs/rapport_evaluation_*.json
+!docs/confusion_matrix.png
 README.md
 
 # ─── Bases de données locales ─────────────────────────────────────────────────
