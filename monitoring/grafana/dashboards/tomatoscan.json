@@ -104,8 +104,8 @@
     },
     {
       "id": 4,
-      "title": "Temps de réponse — inférence MobileNetV2",
-      "description": "Percentiles p50 et p95 du temps d'inférence mesuré dans /predict.",
+      "title": "Durée d'inférence — MobileNetV2",
+      "description": "Percentiles p50 et p95 de la durée d'inférence du modèle mesurée dans /predict (n'inclut pas la latence HTTP totale de la requête).",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },

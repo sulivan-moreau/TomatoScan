@@ -29,6 +29,7 @@ from tomatoscan.front.utils.api_client import (
     list_users,
     login,
     me,
+    ping,
     predict,
     refresh_token,
     renouveler_si_necessaire,
@@ -166,19 +167,60 @@ class TestGetHistory:
 
 
 class TestGetReports:
-    """GET /reports."""
+    """GET /reports — historique d'entraînement du modèle, consommé par pages/dashboard.py."""
 
     @patch("tomatoscan.front.utils.api_client.requests.get")
     def test_get_reports_retourne_le_rapport_d_entrainement(self, mock_get):
         mock_get.return_value = _reponse_mock(
-            200, {"fichier": "historique.csv", "meilleure_val_accuracy": 0.935}
+            200,
+            {
+                "fichier": "historique.csv",
+                "nb_epochs": 13,
+                "meilleure_val_accuracy": 0.9455,
+                "historique": [{"epoch": 1, "val_accuracy": 0.80}],
+            },
         )
 
         rapport = get_reports("mon.token.valide")
 
-        assert rapport["meilleure_val_accuracy"] == 0.935
+        assert rapport["nb_epochs"] == 13
+        assert rapport["meilleure_val_accuracy"] == 0.9455
         args, kwargs = mock_get.call_args
         assert args[0] == f"{API_URL}/reports"
+        assert kwargs["headers"] == {"Authorization": "Bearer mon.token.valide"}
+
+    @patch("tomatoscan.front.utils.api_client.requests.get")
+    def test_get_reports_401_leve_apierror(self, mock_get):
+        mock_get.return_value = _reponse_mock(
+            401, {"detail": "Token invalide ou expiré"}
+        )
+
+        with pytest.raises(ApiError) as erreur:
+            get_reports("token.expire")
+
+        assert erreur.value.status_code == 401
+
+
+class TestPing:
+    """GET /health — vérifie la disponibilité de l'API (ping())."""
+
+    @patch("tomatoscan.front.utils.api_client.requests.get")
+    def test_ping_retourne_true_si_l_api_repond(self, mock_get):
+        mock_get.return_value = _reponse_mock(200, {"status": "ok"})
+
+        assert ping() is True
+        args, kwargs = mock_get.call_args
+        assert args[0] == f"{API_URL}/health"
+
+    @patch("tomatoscan.front.utils.api_client.requests.get")
+    def test_ping_retourne_false_si_l_api_est_injoignable(self, mock_get):
+        """Une erreur réseau (pas de réponse HTTP) doit être interprétée comme
+        « API injoignable » → False, jamais remonter comme exception brute."""
+        import requests
+
+        mock_get.side_effect = requests.ConnectionError("connexion refusée")
+
+        assert ping() is False
 
 
 class TestGetEvaluation:

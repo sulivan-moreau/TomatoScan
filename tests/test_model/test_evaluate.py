@@ -15,6 +15,7 @@ mathématiquement, donc pas mocké).
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
 import torch
 
 from tomatoscan.model.evaluate import (
@@ -75,22 +76,37 @@ def test_executer_inference_collecte_labels_reels_et_predictions():
     assert predictions == [0, 1, 2, 2]  # une erreur volontaire (lot 2)
 
 
-def test_confusion_matrix_forme_dix_par_dix_et_somme_egale_au_nombre_d_echantillons():
-    """La confusion matrix doit être 10x10 et sa somme égaler le nombre
-    d'échantillons, avec des labels réels/prédits fixes couvrant les 10 classes."""
-    from sklearn.metrics import confusion_matrix as sk_confusion_matrix
+@patch("tomatoscan.model.evaluate.plt")
+def test_afficher_confusion_matrix_produit_une_matrice_dix_par_dix(mock_plt):
+    """afficher_confusion_matrix() (fonction du PROJET, pas un appel direct à
+    sklearn) doit construire une matrice de confusion 10x10 couvrant les 10
+    classes, la normaliser par ligne et la transmettre à l'affichage. On
+    intercepte l'appel à ax.imshow() pour vérifier la forme et les proportions
+    RÉELLEMENT produites par le code de evaluate.py — ce test échouerait si la
+    fonction du projet était supprimée ou cassée (contrairement à l'ancien test,
+    qui rappelait sklearn en direct et passait même si evaluate.py disparaissait).
+    """
+    axe = MagicMock()
+    mock_plt.subplots.return_value = (MagicMock(), axe)
 
+    # 3 échantillons par classe sur les 10 classes = 30 échantillons au total.
     labels_reels, predictions = [], []
     for classe in range(10):
         labels_reels.extend([classe, classe, classe])
         predictions.extend([classe, classe, classe])
-    predictions[1] = 5  # erreur volontaire connue à l'avance
+    predictions[1] = 5  # erreur volontaire : vraie classe 0, prédite en classe 5
 
-    matrice = sk_confusion_matrix(labels_reels, predictions)
+    afficher_confusion_matrix(labels_reels, predictions, NOMS_CLASSES)
 
-    assert matrice.shape == (10, 10)
-    assert matrice.sum() == 30
-    assert matrice[0, 5] == 1
+    # Matrice normalisée réellement passée à l'affichage par la fonction du projet.
+    matrice_normalisee = axe.imshow.call_args.args[0]
+    assert matrice_normalisee.shape == (10, 10)
+    # Classe 0 : 2 bonnes prédictions sur 3 (0.667), 1 confondue avec la classe 5 (0.333).
+    assert matrice_normalisee[0, 0] == pytest.approx(2 / 3)
+    assert matrice_normalisee[0, 5] == pytest.approx(1 / 3)
+    # Les 9 autres classes sont parfaitement classées (diagonale normalisée à 1.0).
+    assert matrice_normalisee[1, 1] == pytest.approx(1.0)
+    mock_plt.show.assert_called_once()
 
 
 @patch("tomatoscan.model.evaluate.plt.show")

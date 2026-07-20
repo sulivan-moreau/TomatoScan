@@ -10,7 +10,15 @@ Ferme le ticket [#29 — docs: coordination agile et pilotage du projet](https:/
 > - Ce qui nécessite une **capture depuis l'interface GitHub Projects**, à laquelle
 >   cet environnement de rédaction n'a pas accès (pas de session GitHub interactive,
 >   pas de `gh` CLI installé ici). Ces sections sont clairement marquées
->   **⚠️ À compléter par Satoshi** avec l'emplacement exact et le contenu attendu.
+>   **⚠️ À compléter par le candidat** avec l'emplacement exact et le contenu attendu.
+>
+> **Artefacts de pilotage complémentaires (générés depuis Git, réels)** :
+> - [docs/pr_cadence.md](pr_cadence.md) — suivi chiffré réel de la cadence (PR fusionnées
+>   par semaine, graphiques Mermaid), substitut honnête du burndown chart.
+> - [docs/backlog.md](backlog.md) — backlog versionné reconstruit (user stories métier,
+>   tâches techniques, correctifs), avec traçabilité issue ↔ PR ↔ branche.
+> - [docs/journal_rituels.md](journal_rituels.md) — structure du journal des rituels
+>   (à compléter par le candidat avec ses vrais points de suivi).
 
 ## Sommaire
 
@@ -48,7 +56,11 @@ observable intégralement dans l'historique Git :
    cohérente : `feature/<sujet>` pour une fonctionnalité, `fix/<sujet>` pour un
    correctif (ex. `feature/api-predict`, `fix/torch-cpu`).
 3. Le travail est intégré via une **Pull Request** vers `develop`, fusionnée après
-   revue (34 PR fusionnées au total sur la durée du projet, voir ci-dessous).
+   revue. L'historique compte **35 commits de merge** au total
+   (`git log --merges --oneline | wc -l`) : **34 PR de fonctionnalité ou de correctif**
+   fusionnées sur `develop` + **1 promotion initiale `develop → main`** (PR #42, seul
+   merge présent sur `main`). Le détail par semaine est dans
+   [docs/pr_cadence.md](pr_cadence.md).
 4. `develop` est périodiquement fusionné vers `main` pour les mises en production
    (déploiement automatique par Coolify, voir [docs/cd_application.md](cd_application.md)).
 
@@ -59,23 +71,31 @@ rétrospective) — aucune trace de telles cérémonies n'existe dans le dépôt
 est cohérent avec un projet individuel où elles perdent une partie de leur utilité
 (pas de coordination d'équipe à synchroniser).
 
-> ⚠️ **À compléter par Satoshi** : si des cérémonies SCRUM ont bien été tenues
-> (auto-organisées, journal de bord personnel, points hebdomadaires avec le
-> formateur référent...), les décrire ici avec leur fréquence réelle. Ce document ne
-> peut pas les attester depuis le seul historique Git.
+> ⚠️ **À compléter par le candidat** : si des cérémonies ou points de suivi ont bien
+> été tenus (revues personnelles, journal de bord, **points hebdomadaires avec le
+> formateur référent Simplon**), les consigner dans
+> [docs/journal_rituels.md](journal_rituels.md) — ce fichier fournit la structure du
+> journal de bord et les modalités à renseigner. Le seul historique Git ne peut pas
+> attester ces rituels.
 
 ## Cadence observée (preuve : historique Git)
 
-Chronologie réelle des 34 Pull Requests fusionnées sur `develop`/`main`
-(`git log --all --format="%ad|%s" --date=short | grep "Merge pull request"`) :
+Cadence réelle des **PR fusionnées** par semaine ISO
+(`git log --merges --date=format:'%G-W%V' --pretty="%ad" | sort | uniq -c`). Le suivi
+chiffré complet, avec graphiques Mermaid et vue cumulée, est dans
+[docs/pr_cadence.md](pr_cadence.md) :
 
-| Semaine | Nombre de commits | Période |
-|---|---|---|
-| S23 | 1 | 2026-06-08 – 2026-06-14 (amorce du projet) |
-| S26 | 9 | 2026-06-22 – 2026-06-28 |
-| S27 | 41 | 2026-06-29 – 2026-07-05 (pic d'activité : API + frontend + CI/CD initiaux) |
-| S28 | 12 | 2026-07-06 – 2026-07-12 |
-| S29 | 34 | 2026-07-13 – 2026-07-19 (rôles admin/agriculteur, PostgreSQL async, corrections d'audit) |
+| Semaine ISO | Période | PR fusionnées | Total commits |
+|---|---|---:|---:|
+| 2026-W26 | 22/06 – 28/06 | 3 | 9 |
+| 2026-W27 | 29/06 – 05/07 | 20 | 40 |
+| 2026-W28 | 06/07 – 12/07 | 0 | 12 |
+| 2026-W29 | 13/07 – 19/07 | 12 | 38 |
+
+Deux métriques distinctes y figurent : les **PR fusionnées** (35 au total, l'unité de
+livraison) et le **nombre total de commits** par semaine (rythme de travail brut). La
+semaine W28 illustre l'écart : 0 PR fusionnée mais 12 commits — travail de rédaction des
+specs poussé sur les branches `25-/26-/27-docs-*`, fusionnées seulement en W29.
 
 Repères notables :
 
@@ -100,15 +120,21 @@ Un tableau Kanban existe sur **GitHub Projects**, confirmé par Satoshi comme ut
 tout au long du projet (colonnes de suivi des issues listées dans ce document : #18,
 #21, #24, #29, #36, #38, #40, #41, etc.).
 
-> ⚠️ **À compléter par Satoshi** — ce document ne peut pas capturer l'interface
-> GitHub Projects (pas d'accès interactif depuis cet environnement). À insérer ici :
-> - Une capture d'écran du tableau **en début de projet** (colonnes peu remplies).
-> - Une capture d'écran **à mi-parcours**.
-> - Une capture d'écran **récente** (état actuel, pour prouver l'usage continu dans
->   le temps — critère d'acceptation du ticket #29).
-> - Vérifier à cette occasion que le tableau est bien à jour par rapport à l'état
->   réel des issues (toutes les issues listées dans ce lot de documentation, une
->   fois fermées, doivent être déplacées en conséquence).
+> ⚠️ **À compléter par le candidat** — ce document ne peut pas capturer l'interface
+> GitHub Projects (pas d'accès interactif ni `gh` CLI depuis cet environnement, aucune
+> image n'est fabriquée ici). **À insérer : captures réelles du GitHub Project** aux
+> trois moments suivants :
+>
+> `[À insérer : capture réelle du GitHub Project — début de projet, colonnes peu remplies]`
+>
+> `[À insérer : capture réelle du GitHub Project — mi-parcours]`
+>
+> `[À insérer : capture réelle du GitHub Project — état récent, preuve de l'usage continu dans le temps (critère d'acceptation du ticket #29)]`
+>
+> En attendant ces captures, le suivi chiffré réel de l'avancement est disponible et
+> versionné dans [docs/pr_cadence.md](pr_cadence.md), et le backlog reconstruit dans
+> [docs/backlog.md](backlog.md). Vérifier aussi que le tableau est à jour par rapport à
+> l'état réel des issues (issues fermées déplacées en conséquence).
 
 ## Burndown chart
 
@@ -119,17 +145,15 @@ dans les issues listées, pas de fichier de suivi de sprint versionné). Il sera
 malhonnête de fabriquer ici des chiffres de points d'histoire qui n'ont jamais été
 posés.
 
-Deux options concrètes pour Satoshi :
+Le substitut honnête retenu est **déjà généré et versionné** :
+[docs/pr_cadence.md](pr_cadence.md) présente, à partir des PR réellement fusionnées, un
+tableau de cadence par semaine, un graphique en barres (PR par semaine) et une **courbe
+d'avancement cumulé (burnup)** en Mermaid. Il est présenté pour ce qu'il est — un suivi
+de livraison basé sur Git — et non comme un burndown SCRUM classique qu'il n'est pas.
 
-1. **Si un burndown existe déjà dans GitHub Projects** (vue "burndown" ou "roadmap"
-   avec dates cibles) : en exporter une capture et l'insérer ici.
-2. **Sinon**, le tableau de cadence ci-dessus
-   ([Cadence observée](#cadence-observée-preuve--historique-git)) peut servir de
-   substitut honnête — un graphique d'avancement basé sur les PR réellement
-   fusionnées dans le temps, présenté comme tel (pas comme un burndown SCRUM
-   classique) plutôt que comme un artefact qu'il n'est pas.
-
-> ⚠️ **À compléter par Satoshi** selon l'option retenue.
+> ⚠️ **À compléter par le candidat** (facultatif) : si un burndown ou une roadmap avec
+> dates cibles existe dans GitHub Projects, en insérer une capture réelle ici en
+> complément. Ne pas fabriquer de chiffres de points d'histoire.
 
 ## Imprévus rencontrés et gestion
 
@@ -152,10 +176,10 @@ a posteriori) :
 | SQLite → PostgreSQL asynchrone (asyncpg) en cours de projet | Aligner l'environnement de développement/CI sur la cible réelle de production (PostgreSQL), après un premier socle construit sur SQLite pour aller vite au démarrage |
 | Rôle par défaut deviné en cas d'absence du claim JWT `role` → rejet explicite 401 | Suite au diagnostic du bug intermittent d'accès admin (voir tableau ci-dessus) : un token sans rôle ne doit jamais être traité comme un rôle par défaut silencieux, même si ce cas ne devrait normalement jamais se produire |
 | Verrouillage après échecs de connexion consécutifs ajouté en plus du rate limiting existant | Le rate limiting seul (débit par IP) ne protège pas contre un attaquant lent et distribué ciblant un compte précis — ajouté après audit de sécurité du projet |
-| Suite de tests réduite (d'un pic de 143 à 79 tests) | Un audit de la suite a identifié de nombreuses variantes redondantes d'un même scénario sans gain de couverture réel ; règle retenue : un test nominal + un test d'erreur obligatoire par fonction, sauf régression de bug réel toujours conservée (voir [docs/tests.md](tests.md)) |
+| Suite de tests consolidée après un pic de variantes redondantes ; **101 tests** aujourd'hui (`uv run pytest tests/ -q --collect-only` → `101 tests collected`) | Un audit de la suite a identifié de nombreuses variantes redondantes d'un même scénario sans gain de couverture réel ; règle retenue : un test nominal + un test d'erreur obligatoire par fonction, sauf régression de bug réel toujours conservée (voir [docs/tests.md](tests.md)) |
 | Déclencheur d'alerte de réentraînement (C11) ajouté au pipeline modèle (2026-07-16) | Non prévu dans le socle initial — ajouté pour répondre explicitement au critère de compétence sur les déclencheurs d'entraînement continu |
 
 
 ---
 
-*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub.*
+*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub. Le Markdown brut est le format standard de la documentation technique développeur — aucune mise en forme visuelle propriétaire (police, couleur de fond, contraste personnalisé) à justifier séparément : le rendu (contraste, navigation clavier, lecteur d'écran) est entièrement délégué à la plateforme d'hébergement (GitHub), déjà conforme aux standards d'accessibilité web usuels.*

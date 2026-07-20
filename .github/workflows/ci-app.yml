@@ -1,10 +1,25 @@
-# Workflow CI TomatoScan — valide le code avant déploiement automatique via Coolify.
+# Workflow CI/CD TomatoScan — valide le code, puis (sur push develop/main) livre les
+# images applicatives sur GitHub Container Registry (ghcr.io).
+#
+# Deux jobs :
+#   - test      : tests + lint + build Docker de validation (sur chaque push ET PR)
+#   - livraison : build + push des images API/frontend vers ghcr.io, taguées par le SHA
+#                 du commit. Ne s'exécute QUE si le job "test" est vert (needs: test) et
+#                 UNIQUEMENT sur push develop/main (jamais sur une PR). C'est l'étape de
+#                 livraison applicative conditionnée au succès des tests (compétence C19).
 #
 # Architecture de déploiement :
 #   push sur develop → Coolify déclenche le déploiement preprod
 #                       (PostgreSQL async, docker-compose.override.yml sur VPS OVH)
 #   push sur main    → Coolify déclenche le déploiement prod
 #                       (PostgreSQL, docker-compose.yml sur VPS OVH)
+#
+# Coolify reste la cible de déploiement finale sur le VPS (il build ses propres images
+# à partir du code source). Les images poussées sur ghcr.io par le job "livraison" sont
+# des artefacts de livraison versionnés par SHA — traçables, testés — voir
+# docs/cd_application.md pour le détail du flux et la recommandation de protection de
+# branche (exiger le job "test" vert avant merge, ce qui garantit que seul du code testé
+# atteint develop/main, donc Coolify).
 #
 # PostgreSQL étant désormais le seul moteur de l'application (create_async_engine +
 # asyncpg, plus de SQLite en dehors des tests locaux rapides), la CI démarre un vrai
@@ -18,7 +33,7 @@
 #
 # Les tests mockent model_service.predire → le .pt n'est pas requis pendant la CI.
 
-name: CI — Tests & Lint
+name: CI/CD — Application
 
 on:
   push:
@@ -112,13 +127,16 @@ jobs:
       - name: Audit de sécurité des dépendances (pip-audit)
         run: uv run --with pip-audit pip-audit -l
 
-      # Étape 5 — Vérification du style et des erreurs statiques avec ruff
+      # Étape 5 — Vérification du style et des erreurs statiques avec ruff.
+      # Couvre src/ ET tests/ : le code de test est aussi du code à maintenir propre,
+      # et c'est le périmètre annoncé dans les rapports du projet.
       - name: Lint (ruff)
-        run: uv run ruff check src/
+        run: uv run ruff check src/ tests/
 
-      # Étape 6 — Vérification du formatage avec ruff (bloque les PR mal formatées)
+      # Étape 6 — Vérification du formatage avec ruff (bloque les PR mal formatées),
+      # même périmètre que le lint ci-dessus (src/ + tests/).
       - name: Format check (ruff)
-        run: uv run ruff format --check src/
+        run: uv run ruff format --check src/ tests/
 
       # Étape 6ter — Filet de sécurité : s'assure que la base tomatoscan_test existe
       # avant alembic. POSTGRES_DB (service ci-dessus) doit normalement suffire, mais
@@ -140,7 +158,7 @@ jobs:
         run: uv run alembic upgrade head
 
       # Étape 7 — Exécution de la suite complète (API + modèle + frontend + BDD) avec couverture
-      # Seuil réaliste basé sur la couverture réellement mesurée sur src/tomatoscan/api/ (~79%) —
+      # Seuil appliqué : 75% sur src/tomatoscan/api/ (couverture réellement mesurée ~78%) —
       # --cov-fail-under fait effectivement échouer la CI en dessous, contrairement à un
       # commentaire d'objectif non appliqué.
       - name: Tests (pytest + couverture)
@@ -149,18 +167,106 @@ jobs:
       # Étape 7bis — Seuil de couverture dédié au modèle (C12 — "les tests respectent la
       # couverture souhaitée établie"). Étape séparée de l'étape 7 : --cov-fail-under
       # s'applique à l'ensemble des --cov donnés à une même invocation pytest, donc un
-      # seuil par composant (75% API, 85% modèle) demande deux invocations distinctes
-      # plutôt qu'un seuil combiné qui ne voudrait rien dire pris isolément pour l'un ou
-      # l'autre. Seuil réaliste sous la couverture réellement mesurée (~85%).
+      # seuil par composant (75% API, 80% modèle appliqués) demande deux invocations
+      # distinctes plutôt qu'un seuil combiné qui ne voudrait rien dire pris isolément
+      # pour l'un ou l'autre. Seuil de 80% appliqué, sous la couverture réellement
+      # mesurée (~85%).
       - name: Couverture du modèle (seuil dédié)
         run: uv run pytest tests/test_model/ --cov=src/tomatoscan/model --cov-report=term-missing --cov-fail-under=80
 
       # Étape 8 — Build Docker de validation (API + frontend), sans push ni registre.
-      # Ne remplace pas le déploiement réel : Coolify build et déploie lui-même les images
-      # sur le VPS à partir de docker-compose.yml, indépendamment de cette étape. Ce build-ci
-      # sert uniquement à prouver que les deux Dockerfile restent valides à chaque push/PR —
-      # sans ça, une image cassée ne serait détectée qu'au moment du déploiement par Coolify.
+      # S'exécute sur chaque push ET chaque PR : prouve que les deux Dockerfile restent
+      # valides avant tout merge — sans ça, une image cassée ne serait détectée qu'au
+      # moment de la livraison (job "livraison") ou du build Coolify. La livraison réelle
+      # des images vers ghcr.io est faite par le job "livraison" ci-dessous, uniquement
+      # après succès de ce job "test" et uniquement sur push develop/main.
       - name: Build Docker de validation (API + frontend, sans push)
         run: |
           docker build -f Dockerfile.api -t tomatoscan-api:ci .
           docker build -f Dockerfile.front -t tomatoscan-front:ci .
+
+  # ---------------------------------------------------------------------------
+  # Job de LIVRAISON applicative (compétence C19) — conditionné au succès des tests.
+  #
+  # Ne s'exécute que si :
+  #   - le job "test" ci-dessus est vert (needs: test), ET
+  #   - l'événement est un push (pas une pull_request), ET
+  #   - la branche est develop ou main.
+  # Aucune image n'est donc jamais publiée depuis une PR ni depuis du code non testé.
+  #
+  # Construit et pousse les images API et frontend sur GitHub Container Registry
+  # (ghcr.io), taguées par le SHA du commit (traçabilité exacte commit → image) et par
+  # le nom de branche (develop/main) pour retrouver facilement la dernière image d'un
+  # environnement. Coolify reste la cible de déploiement finale sur le VPS (voir
+  # docs/cd_application.md) : ces images sont l'artefact de livraison versionné et testé.
+  # ---------------------------------------------------------------------------
+  livraison:
+    name: Livraison — build & push des images vers ghcr.io
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Autorise le GITHUB_TOKEN intégré au run à écrire des packages (images) sur ghcr.io.
+    # Aucun secret supplémentaire à créer : GITHUB_TOKEN est fourni automatiquement.
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # Étape 1 — Récupération du code source (Dockerfile.api, Dockerfile.front, sources)
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      # Étape 2 — Authentification auprès de ghcr.io avec le token intégré au run.
+      # github.actor = compte qui a déclenché le run ; le token porte la permission
+      # packages: write déclarée ci-dessus.
+      - name: Connexion à ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Étape 3 — Build + push de l'image API. Deux tags :
+      #   - :${{ github.sha }}      → image immuable, traçable au commit exact
+      #   - :${{ github.ref_name }} → alias mobile de la dernière image de la branche
+      #                               (develop ou main)
+      # Les noms d'images ghcr.io doivent être en minuscules : le dépôt sulivan-moreau
+      # l'est déjà, aucun risque de casse ici.
+      - name: Build & push image API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          push: true
+          tags: |
+            ghcr.io/sulivan-moreau/tomatoscan-api:${{ github.sha }}
+            ghcr.io/sulivan-moreau/tomatoscan-api:${{ github.ref_name }}
+
+      # Étape 4 — Build + push de l'image frontend (mêmes conventions de tags)
+      - name: Build & push image frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.front
+          push: true
+          tags: |
+            ghcr.io/sulivan-moreau/tomatoscan-front:${{ github.sha }}
+            ghcr.io/sulivan-moreau/tomatoscan-front:${{ github.ref_name }}
+
+      # Étape 5 — Résumé de livraison dans l'onglet Summary du run (images publiées).
+      - name: Résumé de la livraison
+        if: always()
+        run: |
+          {
+            echo "## Livraison des images vers ghcr.io"
+            echo ""
+            echo "| Image | Tags poussés |"
+            echo "|---|---|"
+            echo "| API | \`${{ github.sha }}\`, \`${{ github.ref_name }}\` |"
+            echo "| Frontend | \`${{ github.sha }}\`, \`${{ github.ref_name }}\` |"
+            echo ""
+            echo "Registre : \`ghcr.io/sulivan-moreau/tomatoscan-{api,front}\`"
+            echo "Déploiement final sur le VPS assuré par Coolify (voir docs/cd_application.md)."
+          } >> "$GITHUB_STEP_SUMMARY"

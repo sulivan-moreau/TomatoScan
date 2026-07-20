@@ -22,7 +22,38 @@ Deux workflows distincts, avec des rôles différents :
 
 ## CI Modèle — entraînement + évaluation
 
-**Déclencheurs** : push sur une branche `feature/model-*`, ou manuel (`workflow_dispatch`).
+**Déclencheurs** (voir le bloc `on:` de `ci-model.yml`) :
+
+```yaml
+on:
+  push:
+    branches:
+      - "feature/model-*"
+  workflow_dispatch:
+```
+
+Deux façons de lancer ce workflow, l'une et l'autre volontaires :
+
+1. **Manuellement (`workflow_dispatch`)** — c'est le mode d'usage courant. Depuis
+   l'onglet **Actions** → « CI — Pipeline modèle » → **Run workflow**, ou
+   `gh workflow run ci-model.yml`. On relance ainsi le pipeline modèle à la demande,
+   sans avoir à pousser du code, ce qui est pratique pour un projet où le
+   réentraînement n'est pas déclenché à chaque commit.
+2. **En poussant sur une branche `feature/model-*`** — pour que le pipeline tourne
+   automatiquement pendant qu'on travaille spécifiquement sur le modèle (préfixe de
+   branche réservé à ce sujet). Le pattern `feature/model-*` cible ces branches et
+   elles seules, pour ne pas relancer un entraînement (même court) à chaque push
+   applicatif.
+
+> **Précision honnête sur le déclencheur push.** Sur GitHub Actions, un workflow ne se
+> déclenche sur `push` que si le fichier de workflow existe **sur la branche poussée**.
+> Aujourd'hui `ci-model.yml` vit sur `develop` mais pas encore sur une branche
+> `feature/model-*` (la seule existante, `feature/model-training`, est antérieure à ce
+> workflow). Tant qu'une future branche `feature/model-*` ne contiendra pas ce fichier,
+> le déclenchement automatique par push ne s'armera pas — c'est pourquoi le
+> **déclenchement manuel (`workflow_dispatch`) est le chemin principal** documenté ci-dessus,
+> et le déclencheur push un complément qui s'activera dès qu'on rouvrira une branche
+> modèle depuis `develop`.
 
 **Ce qu'elle prouve** : que le pipeline technique fonctionne de bout en bout — pas la
 qualité du modèle. Elle entraîne réellement (aucun mock, contrairement aux tests
@@ -67,7 +98,8 @@ produit volontairement laissée ouverte, pas tranchée dans ce workflow.
 
 **Déclencheurs** :
 - Automatique : push sur `develop` modifiant un fichier `models/**.pt`.
-- Manuel (`workflow_dispatch`) avec un input `dry_run` (coché par défaut).
+- Manuel (`workflow_dispatch`) avec un input `dry_run` (**coché par défaut** — choix
+  assumé, voir ci-dessous).
 
 **Ce qu'elle fait** : dépose un checkpoint `.pt` déjà entraîné sur le VPS de préprod
 et redémarre le conteneur API pour qu'il le charge. Elle ne réentraîne rien — c'est le
@@ -93,12 +125,33 @@ existante, aucun MLflow utilisé sur ce projet.
 7. Résumé du déploiement publié dans l'onglet Summary du run (mode, fichier, taille,
    déclencheur, horodatage, statut).
 
-> **Point d'attention connu** : `models/` est actuellement dans `.gitignore` (voir
-> `.gitignore` — la section « Données et modèles »). Le déclencheur automatique sur
-> push `develop` ne se déclenchera donc pas tant qu'un `.pt` n'est pas explicitement
-> ajouté au dépôt avec `git add -f`, ou que `.gitignore` ne soit changé — décision
-> volontairement laissée à Satoshi, non tranchée ici. En attendant, le déploiement
-> d'un nouveau modèle se fait via le déclenchement manuel (`workflow_dispatch`).
+### Deux choix assumés (pas des oublis)
+
+Deux caractéristiques de ce workflow sont des **décisions volontaires**, pas des
+configurations inachevées :
+
+1. **`models/` est dans `.gitignore`, donc le déclencheur `paths: models/**.pt` ne
+   s'arme pas en l'état.** Le modèle `.pt` (plusieurs dizaines de Mo) n'est
+   délibérément **pas versionné dans Git** — un checkpoint binaire volumineux n'a pas
+   sa place dans l'historique d'un dépôt de code, il vit dans un volume Docker sur le
+   VPS (voir `docker-compose.yml`, `./models:/app/models:ro`). Conséquence directe et
+   acceptée : le déclencheur automatique sur push `develop` ne se déclenchera pas tant
+   qu'un `.pt` n'est pas explicitement ajouté au dépôt (`git add -f`) ou que
+   `.gitignore` n'est pas modifié — ce qui n'est pas prévu. En pratique, **le
+   déploiement d'un nouveau modèle passe donc par le déclenchement manuel**
+   (`workflow_dispatch`), qui est le chemin nominal.
+
+2. **`dry_run` est coché par défaut sur le déclenchement manuel.** Déployer un modèle
+   copie un fichier sur le VPS **et redémarre le conteneur API de production** — une
+   action à effet réel qu'on ne veut jamais lancer par mégarde depuis l'interface
+   GitHub. Le défaut `dry_run: true` impose de **décocher explicitement** la case pour
+   un vrai déploiement : un garde-fou humain volontaire, cohérent avec le fait qu'aucun
+   déploiement modèle n'est automatisé sans revue (voir aussi la CI Modèle, qui
+   n'enclenche jamais de déploiement automatique).
+
+Ces deux points se tiennent : le modèle n'est pas dans Git (choix de taille/hygiène du
+dépôt) et son déploiement reste une action manuelle sous contrôle humain (choix de
+sécurité). Rien n'est cassé — c'est la posture retenue pour ce projet.
 
 ## Installation
 
@@ -164,4 +217,4 @@ gh workflow run cd-model.yml -f dry_run=false
 
 ---
 
-*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub.*
+*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub. Le Markdown brut est le format standard de la documentation technique développeur — aucune mise en forme visuelle propriétaire (police, couleur de fond, contraste personnalisé) à justifier séparément : le rendu (contraste, navigation clavier, lecteur d'écran) est entièrement délégué à la plateforme d'hébergement (GitHub), déjà conforme aux standards d'accessibilité web usuels.*

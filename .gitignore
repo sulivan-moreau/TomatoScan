@@ -33,6 +33,10 @@ mlflow.db
 .DS_Store
 Thumbs.db
 
+# docker-compose.local.yml EST versionné : docs/monitoring.md le présente comme
+# la procédure officielle de démonstration locale du monitoring (publication des
+# ports 9090/3000 vers l'hôte). Un jury doit pouvoir le récupérer en clonant.
+
 # Couverture de tests
 .coverage
 htmlcov/

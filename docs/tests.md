@@ -17,20 +17,33 @@ Ferme le ticket [#21 — docs: plan de tests et rapport de couverture](https://g
 
 | Élément | Valeur |
 |---|---|
-| Nombre total de tests | 79 |
+| Nombre total de tests | 104 |
 | Framework | pytest + pytest-asyncio (mode auto) |
-| Couverture API mesurée | ~78 % (seuil CI : 75 %) |
-| Couverture modèle mesurée | ~85 % (seuil CI : 80 %) |
+| Couverture globale mesurée (`--cov=src/tomatoscan`) | ~83 % (tout le paquet : API + modèle + frontend + BDD) |
+| Couverture API mesurée (`--cov=src/tomatoscan/api`) | ~78 % (seuil CI : 75 %) |
+| Couverture modèle mesurée (`--cov=src/tomatoscan/model`) | ~85 % (seuil CI : 80 %) |
 | Base de données de test | SQLite en mémoire (aiosqlite), l'application cible PostgreSQL/asyncpg en dev/préprod/prod |
 | Modèle réel (poids MobileNetV2) | Jamais chargé en test — entièrement mocké |
+
+Les trois chiffres de couverture mesurent des périmètres différents et ne sont pas
+interchangeables : **~74 % est la couverture globale** du paquet `src/tomatoscan`
+(commande d'en-tête de la section [couverture](#exécution-des-tests-et-calcul-de-couverture)),
+tandis que les ~78 % et ~85 % sont des mesures **scopées** sur les seuls sous-arbres
+`api/` et `model/`. La couverture globale reste légèrement en deçà de ces deux-là
+parce qu'elle inclut en plus les points d'entrée / scripts moins couverts par les tests
+unitaires (CLI d'entraînement, `__main__`) ; le frontend Streamlit (`front/`) est
+désormais largement couvert en bout-en-bout via `AppTest` (pages `history`, `dashboard`,
+`predict`, navigation par rôle). Les deux
+seuils CLI appliqués en CI (`--cov-fail-under`) portent volontairement sur les périmètres
+scopés (75 % API, 80 % modèle) — voir la justification en fin de section couverture.
 
 Répartition par domaine :
 
 | Domaine | Fichiers | Nombre de tests |
 |---|---|---|
-| API (auth, sécurité, routes) | `tests/test_api/*.py` | 44 |
+| API (auth, sécurité, routes) | `tests/test_api/*.py` | 39 |
 | Modèle (prétraitement, entraînement, évaluation) | `tests/test_model/*.py` | 24 |
-| Frontend (client API, navigation, gestion 401) | `tests/test_frontend/*.py` | 20 |
+| Frontend (client API, pages métier, navigation, gestion 401, régression JWT) | `tests/test_frontend/*.py` | 39 |
 | Base de données (modèles SQLAlchemy) | `tests/test_database/*.py` | 2 |
 
 Deux principes appliqués sur l'ensemble de la suite :
@@ -88,6 +101,16 @@ Ces trois commandes sont exactement celles exécutées par la CI (`.github/workf
 (75 % API / 80 % modèle) plutôt qu'un seuil unique combiné : chaque composant a une
 couverture réelle différente, un seuil combiné masquerait une régression sur l'un des deux.
 
+**Justification des valeurs retenues (75 % / 80 %)** : chaque seuil est fixé légèrement
+en dessous de la couverture réellement mesurée au moment où il a été posé (78,15 %
+mesuré sur l'API, seuil 75 % ; 84,86 % mesuré sur le modèle, seuil 80 %) — une marge
+volontaire de quelques points, pas la couverture exacte, pour que `--cov-fail-under`
+échoue sur une vraie régression sans casser la CI au moindre arrondi entre deux runs.
+Ce ne sont pas des objectifs arbitraires (ex. "80 % partout" par convention) : ils
+reflètent la couverture atteinte après la passe de réduction des tests redondants
+(voir [docs/agile.md](agile.md)), pas un chiffre fixé a priori puis atteint en gonflant
+artificiellement le nombre de tests.
+
 ## Génération du rapport de couverture HTML
 
 ```bash
@@ -143,8 +166,17 @@ c'est un artifact reproductible à la demande via la commande ci-dessus, pas une
 | `test_users.py` | `test_suppression_bloquee_si_utilisateur_a_des_predictions` | Suppression bloquée si l'utilisateur a des prédictions enregistrées → 409 |
 
 Stratégie commune API : `httpx.AsyncClient` contre l'application FastAPI réelle (pas
-de mock du framework), base SQLite en mémoire dédiée par test, service modèle mocké
-(`unittest.mock.patch` sur `model_service`) — jamais de poids MobileNetV2 réels chargés.
+de mock du framework), service modèle mocké (`unittest.mock.patch` sur `model_service`)
+— jamais de poids MobileNetV2 réels chargés. La base de test est une **unique** base
+SQLite en mémoire (aiosqlite + `StaticPool`), créée une seule fois par session
+(`tests/conftest.py`, fixture `_preparer_bdd_test` en `scope="session"`) et **partagée
+par tous les tests** — et non une base dédiée par test. Deux garde-fous préservent
+l'isolation et l'idempotence de la suite : (1) les tables sont supprimées (`drop_all`)
+au teardown de la session, et (2) chaque test créant un compte agriculteur génère un
+`username` unique via `uuid4()`. Conséquence : deux exécutions consécutives contre une
+base **persistante** réutilisée (fichier SQLite en local, ou service PostgreSQL de la
+CI) donnent le même résultat, sans collision « username déjà pris » ni historique
+résiduel d'un run à l'autre.
 
 ### Modèle — `tests/test_model/` (compétence C12)
 
@@ -168,7 +200,7 @@ de mock du framework), base SQLite en mémoire dédiée par test, service modèl
 | `test_train.py` | `test_entrainer_modele_early_stopping_sauvegarde_uniquement_aux_ameliorations` | Early stopping après 3 dégradations consécutives ; sauvegarde uniquement aux améliorations de val_loss |
 | `test_evaluate.py` | `test_charger_checkpoint_extrait_les_bons_champs` | Chargement d'un checkpoint → bons champs extraits (poids, classes, accuracy) |
 | `test_evaluate.py` | `test_executer_inference_collecte_labels_reels_et_predictions` | Inférence sur un jeu de données → labels réels et prédits correctement collectés |
-| `test_evaluate.py` | `test_confusion_matrix_forme_dix_par_dix_et_somme_egale_au_nombre_d_echantillons` | Matrice de confusion 10×10, somme = nombre d'échantillons |
+| `test_evaluate.py` | `test_afficher_confusion_matrix_produit_une_matrice_dix_par_dix` | `afficher_confusion_matrix()` (fonction du projet) construit et normalise une matrice de confusion 10×10 couvrant les 10 classes — forme et proportions vérifiées via l'appel intercepté à `imshow()`, pas via un appel direct à sklearn |
 | `test_evaluate.py` | `test_afficher_confusion_matrix_classe_absente_ne_plante_plus` | Régression : classe absente des labels réels/prédits ne fait plus planter `confusion_matrix()` |
 | `test_evaluate.py` | `test_generer_rapport_calcule_l_accuracy_et_liste_les_classes_sous_performantes` | Le rapport JSON calcule l'accuracy et liste les classes sous le seuil F1 |
 | `test_evaluate.py` | `test_generer_rapport_classe_totalement_absente_ne_plante_plus` | Régression : classe totalement absente du jeu de test ne fait plus planter `classification_report()` |
@@ -193,6 +225,10 @@ des images factices en mémoire.
 | `test_api_client.py::TestCreateUser` | `test_create_user_envoie_les_bons_identifiants` | Création d'utilisateur : bon payload envoyé à l'API |
 | `test_api_client.py::TestDeleteUser` | `test_delete_user_appelle_le_bon_endpoint` | Suppression : bon endpoint/méthode appelés |
 | `test_api_client.py::TestGetHistory` | `test_get_history_retourne_la_liste_des_predictions` | Historique des prédictions récupéré et formaté |
+| `test_api_client.py::TestGetReports` | `test_get_reports_retourne_le_rapport_d_entrainement` | Rapport d'entraînement du modèle récupéré via `GET /reports` (consommé par `pages/dashboard.py`) |
+| `test_api_client.py::TestGetReports` | `test_get_reports_401_leve_apierror` | 401 sur `GET /reports` → `ApiError` avec code 401 |
+| `test_api_client.py::TestPing` | `test_ping_retourne_true_si_l_api_repond` | `ping()` : `GET /health` répond 2xx → `True` |
+| `test_api_client.py::TestPing` | `test_ping_retourne_false_si_l_api_est_injoignable` | `ping()` : erreur réseau → `False` (jamais d'exception brute) |
 | `test_api_client.py::TestPredict` | `test_predict_envoie_le_fichier_et_retourne_le_format_attendu` | Envoi d'image pour prédiction : fichier transmis, réponse au format attendu |
 | `test_api_client.py::TestPredict` | `test_predict_401_leve_apierror_avec_le_detail_de_l_api` | 401 renvoyé par l'API → `ApiError` avec le détail transmis |
 | `test_api_client.py::TestPredict` | `test_predict_erreur_reseau_leve_aussi_apierror` | Erreur réseau (timeout, connexion refusée) → `ApiError` aussi (pas d'exception non gérée) |
@@ -204,6 +240,7 @@ des images factices en mémoire.
 | `test_navigation_role.py` | `test_admin_a_acces_aux_pages_admin_et_a_la_section_administration` | Un admin connecté voit et accède aux pages/section admin |
 | `test_navigation_role.py` | `test_agriculteur_est_bloque_sur_les_pages_admin` | Un agriculteur connecté est bloqué sur les pages admin |
 | `test_navigation_role.py` | `test_changer_le_role_dans_le_token_change_immediatement_l_acces_affiche` | Un changement de rôle dans le token change immédiatement la navigation affichée |
+| `test_regression_base64url.py` | 5 tests de régression (C21) | Verrouille la correction de l'incident de préproduction « rôle admin dégradé — décodage JWT base64 vs base64url » (voir [docs/incidents.md](incidents.md)) : `_decoder_payload_token()` (fonction du projet, déléguée à PyJWT) doit décoder une payload dont l'encodage base64url contient `-`/`_`, cas que l'ancien `base64.b64decode` corrompait silencieusement |
 
 Stratégie commune frontend : `test_api_client.py` mocke tous les appels réseau
 (`unittest.mock.patch` sur `requests.*`) — jamais de vraie requête HTTP.
@@ -225,4 +262,4 @@ unitaires (la CI teste par ailleurs les migrations Alembic contre un vrai Postgr
 
 ---
 
-*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub.*
+*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub. Le Markdown brut est le format standard de la documentation technique développeur — aucune mise en forme visuelle propriétaire (police, couleur de fond, contraste personnalisé) à justifier séparément : le rendu (contraste, navigation clavier, lecteur d'écran) est entièrement délégué à la plateforme d'hébergement (GitHub), déjà conforme aux standards d'accessibilité web usuels.*

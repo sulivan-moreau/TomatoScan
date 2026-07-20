@@ -27,6 +27,7 @@ Ferme le ticket [#38 — docs: documentation pipeline CI application](https://gi
 | Alembic | Migrations de base de données |
 | PostgreSQL 16 (service GitHub Actions) | Base de données réelle pour les tests — pas de substitut SQLite, l'application cible exclusivement `create_async_engine`/asyncpg |
 | Docker | Build de validation des deux images (API, frontend) |
+| `docker/login-action` + `docker/build-push-action` | Livraison des images vers `ghcr.io` (job `livraison`, voir [docs/cd_application.md](cd_application.md)) |
 
 ## Déclencheurs
 
@@ -54,13 +55,19 @@ qu'il soit prêt avant d'exécuter les étapes).
 | 3 | Setup uv | `astral-sh/setup-uv@v3`, cache activé |
 | 4 | Installation des dépendances | `uv sync --extra dev` |
 | 4bis | Audit de sécurité (pip-audit) | `uv run --with pip-audit pip-audit -l` — scanne l'environnement réellement installé contre la base OSV/PyPI Advisory |
-| 5 | Lint (ruff) | `uv run ruff check src/` |
-| 6 | Format check (ruff) | `uv run ruff format --check src/` |
+| 5 | Lint (ruff) | `uv run ruff check src/ tests/` — couvre le code applicatif ET les tests (périmètre annoncé dans les rapports) |
+| 6 | Format check (ruff) | `uv run ruff format --check src/ tests/` — même périmètre |
 | 6ter | Filet de sécurité base de données | Crée `tomatoscan_test` si absente — contourne une fenêtre de flakiness connue des images PostgreSQL officielles sous GitHub Actions (redémarrage interne après `initdb`) |
 | 6bis | Migrations (`alembic upgrade head`) | Vérifie à chaque run que les migrations s'appliquent sur un vrai PostgreSQL |
 | 7 | Tests + couverture API | `pytest tests/ --cov=src/tomatoscan/api --cov-fail-under=75` |
 | 7bis | Couverture modèle (seuil dédié) | `pytest tests/test_model/ --cov=src/tomatoscan/model --cov-fail-under=80` — étape séparée car `--cov-fail-under` s'applique à l'ensemble des `--cov` d'une même invocation ; deux seuils par composant demandent deux invocations |
 | 8 | Build Docker de validation | `docker build -f Dockerfile.api` et `-f Dockerfile.front`, sans push ni registre — prouve que les deux Dockerfile restent valides à chaque push/PR |
+
+Le workflow `ci-app.yml` contient un **second job, `livraison`** (`needs: test`), qui
+n'appartient pas au job `test` ci-dessus : sur push `develop`/`main` uniquement, une
+fois le job `test` vert, il build et pousse les images API/frontend sur `ghcr.io`
+(taguées par le SHA). C'est l'étape de livraison applicative (compétence C19),
+documentée en détail dans [docs/cd_application.md](cd_application.md).
 
 Détail du plan de tests (cas testés, stratégie de mock) : voir
 [docs/tests.md](tests.md).
@@ -107,8 +114,8 @@ gh run rerun <run-id>
 uv sync --extra dev
 
 # Lint + format
-uv run ruff check src/
-uv run ruff format --check src/
+uv run ruff check src/ tests/
+uv run ruff format --check src/ tests/
 
 # Audit de sécurité des dépendances
 uv run --with pip-audit pip-audit -l
@@ -131,4 +138,4 @@ déjà documentée telle quelle dans [docs/tests.md](tests.md).
 
 ---
 
-*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub.*
+*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub. Le Markdown brut est le format standard de la documentation technique développeur — aucune mise en forme visuelle propriétaire (police, couleur de fond, contraste personnalisé) à justifier séparément : le rendu (contraste, navigation clavier, lecteur d'écran) est entièrement délégué à la plateforme d'hébergement (GitHub), déjà conforme aux standards d'accessibilité web usuels.*
