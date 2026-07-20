@@ -8,6 +8,7 @@ Vérifie :
 
 import io
 import os
+import uuid
 from unittest.mock import patch
 
 from PIL import Image
@@ -54,17 +55,20 @@ async def test_history_avec_token(client):
     à l'ordre d'exécution des fichiers de test.
     """
     token_admin = await _obtenir_token_valide(client)
+    # Username unique par exécution (uuid4) : le compte est fraîchement créé pour ce
+    # run, donc son historique est garanti vide même sur une base persistante réutilisée.
+    nom_agri = f"agriculteur_history_vide_{uuid.uuid4().hex[:8]}"
     reponse_creation = await client.post(
         "/users",
         headers={"Authorization": f"Bearer {token_admin}"},
-        json={"username": "agriculteur_history_vide", "password": "motdepasse_vide_1"},
+        json={"username": nom_agri, "password": "motdepasse_vide_1"},
     )
     assert reponse_creation.status_code == 201, reponse_creation.text
 
     reponse_login = await client.post(
         "/auth/token",
         json={
-            "username": "agriculteur_history_vide",
+            "username": nom_agri,
             "password": "motdepasse_vide_1",
         },
     )
@@ -124,12 +128,14 @@ async def test_history_filtree_par_role(mock_dispo, mock_predire, client):
     """Un agriculteur ne voit que ses prédictions, un admin voit celles de tous les utilisateurs."""
     token_admin = await _obtenir_token_valide(client)
 
-    # Création d'un compte agriculteur dédié à ce test (via la route admin)
+    # Création d'un compte agriculteur dédié à ce test, username unique par exécution
+    # (uuid4) pour rester isolé d'un run à l'autre sur une base persistante.
+    nom_agri = f"agriculteur_historique_{uuid.uuid4().hex[:8]}"
     reponse_creation = await client.post(
         "/users",
         headers={"Authorization": f"Bearer {token_admin}"},
         json={
-            "username": "agriculteur_historique",
+            "username": nom_agri,
             "password": "motdepasse_agri_456",
         },
     )
@@ -137,7 +143,7 @@ async def test_history_filtree_par_role(mock_dispo, mock_predire, client):
 
     reponse_login_agri = await client.post(
         "/auth/token",
-        json={"username": "agriculteur_historique", "password": "motdepasse_agri_456"},
+        json={"username": nom_agri, "password": "motdepasse_agri_456"},
     )
     assert reponse_login_agri.status_code == 200
     token_agri = reponse_login_agri.json()["access_token"]

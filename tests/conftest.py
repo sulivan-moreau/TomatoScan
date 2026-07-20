@@ -83,6 +83,17 @@ async def _preparer_bdd_test():
     async with _SessionTest() as session:
         await bootstrap_admin(session)
     yield
+    # Teardown de session : on supprime toutes les tables après la dernière exécution.
+    # Sans ça, contre une base PERSISTANTE (fichier SQLite ou PostgreSQL réutilisé),
+    # les lignes créées par cette session — compte admin, comptes agriculteur,
+    # prédictions — survivraient à `pytest` et feraient échouer la session SUIVANTE
+    # (usernames déjà pris → 409, historiques non vides, etc.). drop_all() garantit
+    # que chaque exécution repart d'un schéma vierge : la suite reste IDEMPOTENTE,
+    # deux exécutions consécutives sur la même base donnant le même résultat.
+    # (Sur `sqlite:///:memory:` par défaut, cela ne coûte rien — la base disparaît
+    # de toute façon à la fin du processus.)
+    async with _moteur_test.begin() as connexion:
+        await connexion.run_sync(Base.metadata.drop_all)
 
 
 @pytest_asyncio.fixture(loop_scope="session")

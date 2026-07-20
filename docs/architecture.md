@@ -10,8 +10,9 @@ Ferme le ticket [#36 — docs: documentation technique du projet](https://github
 1. [Installation de l'environnement de développement](#installation-de-lenvironnement-de-développement)
 2. [Architecture applicative](#architecture-applicative)
 3. [Dépendances](#dépendances)
-4. [Procédure d'exécution des tests](#procédure-dexécution-des-tests)
-5. [Pourquoi le monitoring est réservé aux comptes admin](#pourquoi-le-monitoring-est-réservé-aux-comptes-admin)
+4. [Éco-conception](#éco-conception)
+5. [Procédure d'exécution des tests](#procédure-dexécution-des-tests)
+6. [Pourquoi le monitoring est réservé aux comptes admin](#pourquoi-le-monitoring-est-réservé-aux-comptes-admin)
 
 ## Installation de l'environnement de développement
 
@@ -129,6 +130,38 @@ séparés volontairement pour ne pas embarquer les dépendances ML lourdes
 > (voir `src/tomatoscan/model/train.py`, `evaluate.py`). Restant du choix technique
 > initial du projet, sans impact fonctionnel actuel.
 
+## Éco-conception
+
+### Choix d'infrastructure
+
+Justification détaillée des choix éco-responsables (open source plutôt que SaaS
+propriétaire, VPS OVH certifié ISO 50001, MobileNetV2 CPU-only sans GPU en
+inférence, aucun stockage d'image uploadée, `uv` pour réduire le temps CPU
+d'installation, images Docker `python:3.11-slim`) : voir le Livrable 5 de
+[`docs/specs_techniques.pdf`](specs_techniques.pdf) (issue #27).
+
+### Éco-conception applicative (interface Streamlit)
+
+Au-delà de l'infrastructure, trois actes d'éco-conception sont intégrés au **code**
+du frontend, traçables et vérifiables (référentiels de repère : RGESN / EcoIndex) :
+
+| Acte | Fichier | Effet |
+|---|---|---|
+| **Limite d'upload alignée sur l'API** | `src/tomatoscan/front/.streamlit/config.toml` (`[server] maxUploadSize = 5`) | Empêche le transfert d'une image que l'API rejetterait de toute façon au-delà de 5 Mo (défaut Streamlit : 200 Mo). Bande passante et énergie de transfert économisées côté client comme côté serveur. |
+| **Compression / redimensionnement client avant envoi** | `src/tomatoscan/front/pages/predict.py` (`_compresser_image`) | Le plus grand côté de l'image est borné à 1024 px avant l'envoi (le modèle infère en 224×224), avec ré-encodage JPEG q85 / PNG `optimize` et **conservation du format d'origine** (le type MIME reste dans les formats acceptés par l'API). Sur une photo smartphone typique (~4000×3000), la charge réseau est fortement réduite. |
+| **Mise en cache des appels du tableau de bord** | `src/tomatoscan/front/pages/dashboard.py` (`@st.cache_data(ttl=60)`) | Les appels `get_reports` / `list_users` / `get_history` ne sont plus rejoués à chaque re-run Streamlit (chaque interaction relance le script) ; le cache est invalidé après une suppression pour garder des données fraîches. Réduit le nombre de requêtes API et la charge PostgreSQL. |
+
+### Accessibilité de l'interface
+
+Standard visé : **WCAG 2.1 niveau AA** (cohérent avec les critères d'acceptation des
+user stories). Points traités dans le code : contrastes des bandeaux de résultat
+calculés et conformes AA (ratios documentés dans `pages/predict.py`), libellés
+explicites sur tous les champs, pictogrammes en SVG `aria-hidden` doublés d'un libellé
+texte, texte alternatif descriptif sur l'aperçu de l'image analysée, et forçage de la
+langue de page en `fr` (contournement documenté : Streamlit 1.58 sert `lang="en"` en dur
+et n'expose aucune option native, la langue est corrigée par injection JS — limite
+assumée à réévaluer si Streamlit expose un réglage natif).
+
 ## Procédure d'exécution des tests
 
 ```bash
@@ -162,4 +195,4 @@ final, pour un projet dont le périmètre reste volontairement simple.
 
 ---
 
-*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub.*
+*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub. Le Markdown brut est le format standard de la documentation technique développeur — aucune mise en forme visuelle propriétaire (police, couleur de fond, contraste personnalisé) à justifier séparément : le rendu (contraste, navigation clavier, lecteur d'écran) est entièrement délégué à la plateforme d'hébergement (GitHub), déjà conforme aux standards d'accessibilité web usuels.*

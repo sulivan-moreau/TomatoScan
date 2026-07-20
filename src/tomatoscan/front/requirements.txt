@@ -3,3 +3,7 @@ requests>=2.31
 pandas>=2.0
 python-dotenv>=1.0
 pyjwt>=2.8.0
+# Pillow est déjà tiré transitivement par Streamlit, mais pages/predict.py
+# l'importe désormais directement (compression d'image avant envoi, éco-conception)
+# : on déclare donc la dépendance explicitement plutôt que de compter sur Streamlit.
+pillow>=10.3

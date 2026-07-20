@@ -4,29 +4,46 @@ Documente la chaîne de déploiement continu de l'application (API + frontend).
 
 Ferme le ticket [#40 — docs: documentation pipeline CD application](https://github.com/sulivan-moreau/tomatoscan/issues/40).
 
-## À la différence du modèle, pas de workflow GitHub Actions
+## Deux maillons : livraison des images (GitHub Actions) + déploiement (Coolify)
 
-Le déploiement de l'API et du frontend n'est **pas** piloté par un workflow GitHub
-Actions (contrairement au modèle, voir `cd-model.yml` /
-[docs/ci_cd_modele.md](ci_cd_modele.md)). C'est **Coolify**, une plateforme PaaS
-auto-hébergée sur le VPS OVH, qui surveille directement le dépôt Git et redéploie
-automatiquement à chaque push — sans étape intermédiaire dans `.github/workflows/`.
+Le déploiement continu de l'application repose sur **deux maillons complémentaires** :
 
-Cette architecture est documentée dans les en-têtes de `docker-compose.yml` et
-`ci-app.yml` :
+1. **Livraison des images vers ghcr.io — job `livraison` de `ci-app.yml`** (GitHub
+   Actions). Sur push `develop`/`main`, **après** que le job `test` soit vert
+   (`needs: test`), ce job construit les images API et frontend et les **pousse sur
+   GitHub Container Registry** (`ghcr.io`), taguées par le SHA du commit. C'est
+   l'**étape de livraison applicative conditionnée au succès des tests** (compétence
+   C19) : plus aucune image n'est publiée depuis une PR ni depuis du code non testé.
+2. **Déploiement sur le VPS — Coolify.** C'est **Coolify**, une plateforme PaaS
+   auto-hébergée sur le VPS OVH, qui reste la **cible de déploiement finale** : il
+   surveille le dépôt Git et redéploie à chaque push. Coolify build ses propres images
+   à partir des mêmes `Dockerfile.api`/`Dockerfile.front` puis démarre les conteneurs.
 
 ```
-push sur develop → Coolify déclenche le déploiement préprod
-                    (PostgreSQL async, docker-compose.override.yml)
-push sur main    → Coolify déclenche le déploiement prod
-                    (PostgreSQL, docker-compose.yml seul)
+push sur develop → job "test" (ci-app.yml) vert
+                 → job "livraison" pousse les images sur ghcr.io (taguées par SHA)
+                 → Coolify déploie la préprod (PostgreSQL async, docker-compose.override.yml)
+push sur main    → idem, puis Coolify déploie la prod (docker-compose.yml seul)
 ```
 
-La CI GitHub Actions (`ci-app.yml`) reste un **garde-fou en amont** : elle valide
-tests, lint et build Docker sur chaque push/PR, mais ne déclenche pas elle-même le
-déploiement — c'est Coolify qui build et déploie ses propres images à partir des
-mêmes `Dockerfile.api`/`Dockerfile.front`, indépendamment du résultat de la CI (voir
-le commentaire de l'étape « Build Docker de validation » dans `ci-app.yml`).
+### Ce que « conditionné au succès des tests » veut dire ici (honnêtement)
+
+Le job `livraison` a `needs: test` : il **ne peut pas** publier d'image si les tests
+échouent — c'est vérifiable dans `ci-app.yml`. En revanche, Coolify observe le dépôt
+Git indépendamment et build ses **propres** images. Pour que la chaîne complète (jusqu'au
+VPS) soit réellement pilotée par la CI, le maillon manquant est la **protection de
+branche** décrite plus bas : exiger le job `test` vert avant tout merge sur
+`develop`/`main` garantit que **seul du code testé atteint ces branches**, donc que
+Coolify ne déploie que du code testé. Livraison ghcr.io (gate technique `needs: test`)
++ protection de branche (gate humaine sur le merge) forment ensemble la garantie.
+
+> **Preuve à constater sur GitHub.** Ce document décrit le job `livraison` tel qu'il
+> est écrit dans `ci-app.yml` ; sa syntaxe YAML est validée localement
+> (`yaml.safe_load`), mais **l'exécution réelle d'un run GitHub Actions ne peut pas
+> être constatée depuis l'environnement de rédaction** (pas d'accès au runner). Le
+> premier run vert (push sur `develop`) et la présence des images sur
+> `ghcr.io/sulivan-moreau/tomatoscan-{api,front}` seront à vérifier dans l'onglet
+> **Actions** et **Packages** du dépôt. Aucun run vert n'est affirmé ici.
 
 ## Sommaire
 
@@ -34,18 +51,26 @@ le commentaire de l'étape « Build Docker de validation » dans `ci-app.yml`).
 2. [Installation](#installation)
 3. [Configuration (secrets, registry, VPS)](#configuration-secrets-registry-vps)
 4. [Procédure de test et debug](#procédure-de-test-et-debug)
-5. [Déclenchement manuel](#déclenchement-manuel)
+5. [Protection de branche (à activer côté GitHub)](#protection-de-branche-à-activer-côté-github)
+6. [Déclenchement manuel](#déclenchement-manuel)
 
 ## Toutes les étapes et déclencheurs
 
 | Étape | Déclencheur / mécanisme |
 |---|---|
-| 1. Push sur `develop` ou `main` | Déclencheur — Coolify observe le dépôt GitHub connecté |
-| 2. Build des images Docker | Coolify build `Dockerfile.api` et `Dockerfile.front` à partir du commit poussé |
-| 3. Sélection de la stack Compose | `develop` → `docker-compose.yml` + `docker-compose.override.yml` (préprod, `postgres_preprod`, `APP_ENV=development`) ; `main` → `docker-compose.yml` seul (prod, service `postgres`) |
-| 4. Démarrage des conteneurs | `api`, `front`, la base PostgreSQL correspondante, `prometheus`, `grafana` — voir [docs/monitoring.md](monitoring.md) |
-| 5. Attente de disponibilité | `front` attend que `api` passe `service_healthy` (healthcheck `GET /health`) avant de démarrer — évite que le frontend serve une API pas encore prête |
-| 6. Bascule de trafic | Gérée par Coolify (reverse proxy interne) une fois les conteneurs sains |
+| 1. Push sur `develop` ou `main` | Déclenche le job `test` de `ci-app.yml` (GitHub Actions) et notifie Coolify (webhook) |
+| 2. Job `test` (GitHub Actions) | Tests + lint + build Docker de validation — doit être **vert** pour autoriser la livraison |
+| 3. Job `livraison` (GitHub Actions) | `needs: test` : build + push des images API/frontend sur `ghcr.io`, taguées par le SHA du commit — **uniquement sur push `develop`/`main`, jamais sur PR** (compétence C19) |
+| 4. Build des images Docker (Coolify) | Coolify build `Dockerfile.api` et `Dockerfile.front` à partir du commit poussé (cible de déploiement finale sur le VPS) |
+| 5. Sélection de la stack Compose | `develop` → `docker-compose.yml` + `docker-compose.override.yml` (préprod, `postgres_preprod`, `APP_ENV=development`) ; `main` → `docker-compose.yml` seul (prod, service `postgres`) |
+| 6. Démarrage des conteneurs | `api`, `front`, la base PostgreSQL correspondante, `prometheus`, `grafana` — voir [docs/monitoring.md](monitoring.md) |
+| 7. Attente de disponibilité | `front` attend que `api` passe `service_healthy` (healthcheck `GET /health`) avant de démarrer — évite que le frontend serve une API pas encore prête |
+| 8. Bascule de trafic | Gérée par Coolify (reverse proxy interne) une fois les conteneurs sains |
+
+Les étapes 2 et 3 (GitHub Actions) et les étapes 4 à 8 (Coolify) se déroulent en
+parallèle après le push ; la protection de branche recommandée plus bas garantit que
+seul du code ayant passé l'étape 2 arrive sur `develop`/`main`, donc que Coolify (étape
+4+) ne déploie que du code testé.
 
 Le modèle MobileNetV2 (`.pt`) n'est **jamais** reconstruit par ce processus : il vit
 dans un volume Docker persistant (`./models:/app/models:ro`) sur le VPS, déposé
@@ -72,8 +97,18 @@ Prérequis avant le tout premier déploiement (voir en-tête de `docker-compose.
 
 ## Configuration (secrets, registry, VPS)
 
-Pas de registry Docker externe : Coolify build les images directement sur le VPS à
-partir du code source, aucun push vers Docker Hub / ghcr.io.
+**Registry — ghcr.io (GitHub Container Registry).** Le job `livraison` de `ci-app.yml`
+pousse les images API et frontend sur `ghcr.io/sulivan-moreau/tomatoscan-api` et
+`.../tomatoscan-front`, taguées par le SHA du commit. Aucun secret à créer : le job
+s'authentifie avec le `GITHUB_TOKEN` intégré au run, via la permission
+`packages: write` déclarée dans le workflow. Les packages publiés apparaissent dans
+l'onglet **Packages** du dépôt.
+
+> Coolify, lui, build ses images **directement sur le VPS** à partir du code source
+> (il ne tire pas les images de ghcr.io) : la publication ghcr.io est un artefact de
+> livraison versionné et traçable, pas la source du déploiement Coolify. Faire
+> consommer par Coolify les images ghcr.io (au lieu de rebuild) est une évolution
+> possible, non mise en place ici.
 
 Variables d'environnement à définir dans le `.env` de chaque environnement Coolify
 (voir `.env.example` pour la liste complète et les valeurs par défaut) :
@@ -121,6 +156,31 @@ Ports exposés par les images (voir `Dockerfile.api`/`Dockerfile.front`) :
   docker compose -f docker-compose.yml up
   ```
 
+## Protection de branche (à activer côté GitHub)
+
+**Statut : recommandation non encore appliquée** — sa configuration exige un accès
+administrateur au dépôt GitHub, hors de portée depuis l'environnement de rédaction de
+cette documentation. Elle est décrite ici comme **action à réaliser côté GitHub**, pas
+comme un état constaté.
+
+Pour que la chaîne CD soit réellement pilotée par les tests jusqu'au déploiement
+Coolify, il faut empêcher qu'un merge non testé atteigne `develop`/`main`. À configurer
+dans **GitHub → Settings → Branches → Branch protection rules**, une règle pour
+`develop` et une pour `main` :
+
+- **Require status checks to pass before merging** → cocher le check
+  **`Tests & Lint (Python 3.11)`** (le job `test` de `ci-app.yml`). Un merge devient
+  alors impossible tant que ce job n'est pas vert.
+- **Require a pull request before merging** (recommandé) — interdit le push direct sur
+  `develop`/`main`, force le passage par une PR (donc par la CI).
+- **Require branches to be up to date before merging** (optionnel) — force à re-tester
+  après rebase sur la cible.
+
+Effet combiné avec le reste de la chaîne : la protection garantit que seul du code
+ayant passé le job `test` arrive sur `develop`/`main` ; le job `livraison`
+(`needs: test`) ne publie d'image ghcr.io qu'après ce même job vert ; et Coolify, qui
+déploie ce qui est sur `develop`/`main`, ne déploie donc que du code testé.
+
 ## Déclenchement manuel
 
 Un push sur `develop` ou `main` suffit à déclencher un déploiement — aucune action
@@ -133,4 +193,4 @@ environnement de rédaction) ; la procédure Coolify générique s'applique tell
 
 ---
 
-*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub.*
+*Accessibilité : document Markdown structuré par hiérarchie de titres (H1→H3), tableaux avec en-têtes de colonnes, aucune information portée uniquement par la couleur ; lisible par un lecteur d'écran et navigable au clavier depuis GitHub. Le Markdown brut est le format standard de la documentation technique développeur — aucune mise en forme visuelle propriétaire (police, couleur de fond, contraste personnalisé) à justifier séparément : le rendu (contraste, navigation clavier, lecteur d'écran) est entièrement délégué à la plateforme d'hébergement (GitHub), déjà conforme aux standards d'accessibilité web usuels.*

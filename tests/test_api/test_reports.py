@@ -1,4 +1,5 @@
-# Tests de l'endpoint GET /reports — historique d'entraînement MobileNetV2
+# Tests des endpoints /reports — historique d'entraînement et évaluation MobileNetV2
+import json
 import os
 
 import pytest
@@ -64,6 +65,68 @@ async def test_reports_fichier_introuvable(monkeypatch, client):
 
     token = await _obtenir_token_valide(client)
     reponse = await client.get("/reports", headers={"Authorization": f"Bearer {token}"})
+
+    assert reponse.status_code == 404
+    assert "introuvable" in reponse.json()["detail"]
+
+
+# Rapport d'évaluation minimal pour les tests de GET /reports/evaluation
+EVALUATION_CONTENU = {
+    "date": "2026-06-24T16:32:36.184168",
+    "modele": "MobileNetV2",
+    "meilleure_epoch": 13,
+    "meilleure_accuracy_validation": 0.9455,
+    "accuracy_test": 0.9355,
+    "classes_sous_performantes": [],
+    "rapport_classification": {
+        "Tomato_healthy": {
+            "precision": 0.9793,
+            "recall": 0.9958,
+            "f1-score": 0.9875,
+            "support": 238.0,
+        }
+    },
+}
+
+
+async def test_evaluation_sans_token(client):
+    """Appel à /reports/evaluation sans token Bearer — attend status 401."""
+    reponse = await client.get("/reports/evaluation")
+    assert reponse.status_code == 401
+
+
+async def test_evaluation_avec_token(tmp_path, monkeypatch, client):
+    """JSON temporaire pointé par EVALUATION_PATH — attend 200 avec les champs attendus."""
+    fichier_json = tmp_path / "rapport_evaluation_test.json"
+    fichier_json.write_text(
+        json.dumps(EVALUATION_CONTENU, ensure_ascii=False), encoding="utf-8"
+    )
+    monkeypatch.setenv("EVALUATION_PATH", str(fichier_json))
+
+    token = await _obtenir_token_valide(client)
+    reponse = await client.get(
+        "/reports/evaluation", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert reponse.status_code == 200
+    corps = reponse.json()
+
+    assert corps["modele"] == "MobileNetV2"
+    assert corps["meilleure_epoch"] == 13
+    assert corps["accuracy_test"] == pytest.approx(0.9355, rel=1e-4)
+    assert corps["classes_sous_performantes"] == []
+    # Le rapport de classification par classe est bien transmis
+    assert "Tomato_healthy" in corps["rapport_classification"]
+
+
+async def test_evaluation_fichier_introuvable(monkeypatch, client):
+    """EVALUATION_PATH pointe vers un fichier inexistant — attend status 404."""
+    monkeypatch.setenv("EVALUATION_PATH", "/chemin/inexistant/evaluation.json")
+
+    token = await _obtenir_token_valide(client)
+    reponse = await client.get(
+        "/reports/evaluation", headers={"Authorization": f"Bearer {token}"}
+    )
 
     assert reponse.status_code == 404
     assert "introuvable" in reponse.json()["detail"]

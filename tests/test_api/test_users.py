@@ -71,8 +71,11 @@ async def _token_agriculteur(
 async def test_agriculteur_recoit_403_sur_toutes_les_routes_users(client):
     """Un compte agriculteur ne doit avoir accès à aucune route /users."""
     token_admin = await _token_admin(client)
-    await _creer_agriculteur(client, token_admin, "agriculteur_403")
-    token_agri = await _token_agriculteur(client, "agriculteur_403")
+    # Username unique par exécution (uuid4) : le test reste isolé même contre une base
+    # persistante réutilisée d'un run à l'autre (pas de collision « username déjà pris »).
+    nom_agri = f"agriculteur_403_{uuid.uuid4().hex[:8]}"
+    await _creer_agriculteur(client, token_admin, nom_agri)
+    token_agri = await _token_agriculteur(client, nom_agri)
     entetes = {"Authorization": f"Bearer {token_agri}"}
 
     assert (await client.get("/users", headers=entetes)).status_code == 403
@@ -91,9 +94,10 @@ async def test_admin_peut_lister_creer_et_supprimer_des_utilisateurs(client):
     token_admin = await _token_admin(client)
     entetes = {"Authorization": f"Bearer {token_admin}"}
 
-    utilisateur = await _creer_agriculteur(
-        client, token_admin, "agriculteur_cycle_complet"
-    )
+    # Username unique par exécution (uuid4) : évite toute collision si un run
+    # précédent s'est interrompu avant la suppression sur une base persistante.
+    nom_agri = f"agriculteur_cycle_complet_{uuid.uuid4().hex[:8]}"
+    utilisateur = await _creer_agriculteur(client, token_admin, nom_agri)
     assert utilisateur["role"] == "agriculteur"
     assert "hashed_password" not in utilisateur
     assert "password" not in utilisateur
@@ -101,7 +105,7 @@ async def test_admin_peut_lister_creer_et_supprimer_des_utilisateurs(client):
     reponse_liste = await client.get("/users", headers=entetes)
     assert reponse_liste.status_code == 200
     usernames = [u["username"] for u in reponse_liste.json()]
-    assert "agriculteur_cycle_complet" in usernames
+    assert nom_agri in usernames
 
     reponse_suppression = await client.delete(
         f"/users/{utilisateur['id']}", headers=entetes
@@ -111,18 +115,21 @@ async def test_admin_peut_lister_creer_et_supprimer_des_utilisateurs(client):
     # L'utilisateur supprimé ne doit plus apparaître dans la liste
     reponse_apres = await client.get("/users", headers=entetes)
     usernames_apres = [u["username"] for u in reponse_apres.json()]
-    assert "agriculteur_cycle_complet" not in usernames_apres
+    assert nom_agri not in usernames_apres
 
 
 async def test_creation_avec_username_deja_pris_retourne_409(client):
     """Créer deux comptes avec le même username doit échouer sur le second."""
     token_admin = await _token_admin(client)
-    await _creer_agriculteur(client, token_admin, "agriculteur_doublon")
+    # Username unique par exécution (uuid4) : c'est la SECONDE création avec ce nom
+    # qui doit renvoyer 409, pas la première parce qu'un run précédent l'aurait déjà pris.
+    nom_double = f"agriculteur_doublon_{uuid.uuid4().hex[:8]}"
+    await _creer_agriculteur(client, token_admin, nom_double)
 
     reponse = await client.post(
         "/users",
         headers={"Authorization": f"Bearer {token_admin}"},
-        json={"username": "agriculteur_doublon", "password": "autre_mdp"},
+        json={"username": nom_double, "password": "autre_mdp"},
     )
     assert reponse.status_code == 409
 
@@ -168,10 +175,11 @@ async def test_suppression_bloquee_si_utilisateur_a_des_predictions(
     """DELETE /users/{id} doit retourner 409 si l'utilisateur a des prédictions enregistrées,
     et l'utilisateur ne doit pas être supprimé de la base dans ce cas."""
     token_admin = await _token_admin(client)
-    utilisateur = await _creer_agriculteur(
-        client, token_admin, "agriculteur_avec_predictions"
-    )
-    token_agri = await _token_agriculteur(client, "agriculteur_avec_predictions")
+    # Username unique par exécution (uuid4) : le compte doit exister pour ce run précis,
+    # sans dépendre de l'état laissé par une exécution antérieure sur une base persistante.
+    nom_agri = f"agriculteur_avec_predictions_{uuid.uuid4().hex[:8]}"
+    utilisateur = await _creer_agriculteur(client, token_admin, nom_agri)
+    token_agri = await _token_agriculteur(client, nom_agri)
 
     # L'agriculteur soumet une prédiction (modèle mocké — aucun checkpoint requis)
     reponse_predict = await client.post(
@@ -198,4 +206,4 @@ async def test_suppression_bloquee_si_utilisateur_a_des_predictions(
     # L'utilisateur doit toujours exister en base après la tentative refusée
     reponse_liste = await client.get("/users", headers=entetes_admin)
     usernames = [u["username"] for u in reponse_liste.json()]
-    assert "agriculteur_avec_predictions" in usernames
+    assert nom_agri in usernames

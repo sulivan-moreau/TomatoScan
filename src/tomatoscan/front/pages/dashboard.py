@@ -8,6 +8,14 @@ Refonte visuelle (issue #33 suite) : les 2 chiffres clés (agriculteurs,
 prédictions) mis en avant via des st.container(key=...) colorés façon
 "metric card" — mêmes variables nb_agriculteurs/nb_predictions qu'avant,
 logique d'appel API/rôle/suppression inchangée.
+
+Éco-conception (C17) : les trois appels API de la page (rapport d'entraînement,
+liste des utilisateurs, historique des prédictions) sont mis en cache via
+@st.cache_data. Streamlit relance tout le script à chaque interaction (clic,
+confirmation de suppression…) ; sans cache, ces trois requêtes réseau seraient
+rejouées à chaque re-run. Le cache (TTL court) évite ces appels redondants tout
+en gardant des données fraîches, et il est explicitement invalidé après une
+suppression pour ne pas afficher un compte déjà supprimé.
 """
 
 import os
@@ -18,6 +26,43 @@ import streamlit as st
 from utils import api_client
 from utils.api_client import ApiError
 from utils.session import gerer_erreur_401
+
+# Éco-conception : TTL du cache des données du tableau de bord. 60 s est un bon
+# compromis — assez court pour que la liste reste à jour après une action d'un
+# autre admin, assez long pour absorber les nombreux re-runs déclenchés par les
+# interactions (boutons de suppression, confirmations) sans refaire les appels.
+CACHE_TTL_SECONDES = 60
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDES, show_spinner=False)
+def _charger_rapport(token: str) -> dict:
+    """Récupère (avec cache) le rapport d'entraînement du modèle (GET /reports).
+
+    Le token sert de clé de cache : deux sessions distinctes n'ont pas la même
+    entrée. Les erreurs (ApiError) ne sont pas mises en cache par Streamlit et
+    remontent normalement à l'appelant pour être traitées (gerer_erreur_401…).
+    """
+    return api_client.get_reports(token)
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDES, show_spinner=False)
+def _charger_utilisateurs(token: str) -> list[dict]:
+    """Récupère (avec cache) la liste des utilisateurs (GET /users)."""
+    return api_client.list_users(token)
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDES, show_spinner=False)
+def _charger_predictions(token: str) -> list[dict]:
+    """Récupère (avec cache) l'historique complet des prédictions (GET /predictions/history)."""
+    return api_client.get_history(token)
+
+
+def _vider_cache_donnees() -> None:
+    """Invalide le cache des données mutables après une écriture (ex. suppression),
+    pour que le prochain re-run recharge des données à jour depuis l'API."""
+    _charger_utilisateurs.clear()
+    _charger_predictions.clear()
+
 
 # --- Garde-fou : token + rôle admin -----------------------------------------
 token = st.session_state.get("token")
@@ -58,7 +103,7 @@ else:
 # doit pas empêcher l'affichage du reste du tableau de bord (utilisateurs, etc.).
 st.subheader("Entraînement du modèle")
 try:
-    rapport = api_client.get_reports(token)
+    rapport = _charger_rapport(token)
 except ApiError as erreur:
     gerer_erreur_401(erreur)
     st.caption(f"Rapport d'entraînement indisponible : {erreur}")
@@ -78,9 +123,9 @@ else:
 # --- Chargement des données ---------------------------------------------------
 try:
     with st.spinner("Chargement des données…"):
-        utilisateurs = api_client.list_users(token)
+        utilisateurs = _charger_utilisateurs(token)
         # Grâce au filtrage par rôle côté API, un admin reçoit l'historique complet
-        toutes_predictions = api_client.get_history(token)
+        toutes_predictions = _charger_predictions(token)
 except ApiError as erreur:
     gerer_erreur_401(erreur)
     st.error(f"Impossible de charger les données du tableau de bord : {erreur}")
@@ -153,6 +198,10 @@ else:
             if colonne_oui.button("Oui, supprimer", key=f"confirme_oui_{u['id']}"):
                 try:
                     api_client.delete_user(u["id"], token)
+                    # Éco-conception : on invalide le cache des données pour que le
+                    # re-run qui suit recharge une liste à jour (sans le compte supprimé)
+                    # au lieu de resservir l'ancienne liste encore en cache.
+                    _vider_cache_donnees()
                     st.success(f"Compte « {u['username']} » supprimé.")
                     st.session_state.pop(cle_confirmation, None)
                     st.rerun()

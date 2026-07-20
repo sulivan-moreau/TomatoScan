@@ -1,5 +1,13 @@
 # TomatoScan — Détection de maladies sur tomates
 
+[![CI/CD Application](https://github.com/sulivan-moreau/TomatoScan/actions/workflows/ci-app.yml/badge.svg)](https://github.com/sulivan-moreau/TomatoScan/actions/workflows/ci-app.yml)
+[![CI Modèle](https://github.com/sulivan-moreau/TomatoScan/actions/workflows/ci-model.yml/badge.svg)](https://github.com/sulivan-moreau/TomatoScan/actions/workflows/ci-model.yml)
+
+> Les badges reflètent l'état des workflows GitHub Actions sur la branche par défaut.
+> Ils resteront « no status » tant qu'aucun run n'a eu lieu — l'exécution réelle est à
+> constater dans l'onglet [Actions](https://github.com/sulivan-moreau/TomatoScan/actions)
+> du dépôt.
+
 Détection de maladies sur feuilles de tomates par deep learning (transfer learning
 MobileNetV2, PyTorch). L'utilisateur envoie une photo de feuille via une interface
 web, reçoit la maladie détectée et le score de confiance associé.
@@ -85,6 +93,7 @@ docs/                   # Documentation technique complète (voir ci-dessous)
 | [docs/cd_application.md](docs/cd_application.md) | Déploiement continu de l'application (Coolify) |
 | [docs/ci_cd_modele.md](docs/ci_cd_modele.md) | Pipeline CI/CD du modèle MobileNetV2 |
 | [docs/agile.md](docs/agile.md) | Coordination agile et pilotage du projet |
+| [AUDIT_REAC.md](AUDIT_REAC.md) | Audit de certification RNCP (constats compétence par compétence) |
 
 ## Choix techniques notables
 

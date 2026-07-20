@@ -12,10 +12,10 @@ groups:
     rules:
       - uid: tomatoscan-error-rate
         title: "Taux d'erreurs TomatoScan élevé"
-        # Condition C = seuil sur la requête A
+        # Condition C = seuil sur la valeur réduite B (elle-même issue de A)
         condition: C
         data:
-          # Requête A — taux d'erreurs sur 5 minutes
+          # Requête A — taux d'erreurs sur 5 minutes (série temporelle)
           - refId: A
             relativeTimeRange:
               from: 300
@@ -24,7 +24,26 @@ groups:
             model:
               expr: "sum(rate(tomatoscan_errors_total[5m]))"
               refId: A
-          # Condition C — seuil > 0.1 req/s
+              # Requête "range" : nécessaire pour que B dispose d'une série à réduire
+              instant: false
+              range: true
+          # Réduction B — dernière valeur de la série A.
+          # Indispensable : Grafana refuse d'appliquer un seuil directement à une
+          # série temporelle ("only reduced data can be alerted on").
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
+              settings:
+                # Les points sans valeur ne font pas échouer la réduction
+                mode: dropNN
+          # Condition C — seuil > 0.1 req/s appliqué à la valeur réduite B
           - refId: C
             relativeTimeRange:
               from: 0
@@ -33,7 +52,7 @@ groups:
             model:
               type: threshold
               refId: C
-              expression: A
+              expression: B
               conditions:
                 - evaluator:
                     type: gt
@@ -43,9 +62,7 @@ groups:
                     type: and
                   query:
                     params:
-                      - A
-                  reducer:
-                    type: last
+                      - B
         # L'alerte se déclenche après 1 minute de dépassement continu
         for: 1m
         annotations:

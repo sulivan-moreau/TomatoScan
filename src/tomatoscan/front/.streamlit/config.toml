@@ -5,3 +5,11 @@ backgroundColor = "#f6f8f6"
 secondaryBackgroundColor = "#ffffff"
 textColor = "#1b2420"
 font = "sans serif"
+
+# Éco-conception : on aligne la taille maximale d'upload du front sur la limite
+# acceptée par l'API (TAILLE_MAX_OCTETS = 5 Mo dans api/routes/predict.py). Sans
+# ce réglage, Streamlit accepte jusqu'à 200 Mo par défaut : l'utilisateur pourrait
+# téléverser une image que l'API rejettera de toute façon, gaspillant bande
+# passante et énergie. La borne à 5 Mo évite ce transfert inutile côté client.
+[server]
+maxUploadSize = 5

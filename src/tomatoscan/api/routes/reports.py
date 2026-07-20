@@ -1,21 +1,31 @@
 """
-Route GET /reports — retourne l'historique d'entraînement MobileNetV2 depuis le CSV.
-Protégée par JWT (Depends(obtenir_utilisateur_courant)).
+Routes /reports — exposent les rapports du modèle MobileNetV2 :
+  - GET /reports             : historique d'entraînement (CSV)
+  - GET /reports/evaluation  : rapport d'évaluation finale sur le jeu de test (JSON)
+Toutes deux protégées par JWT (Depends(obtenir_utilisateur_courant)).
 """
 
 import csv
+import json
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
 from tomatoscan.api.core.security import obtenir_utilisateur_courant
-from tomatoscan.api.schemas.reports import RapportEpoch, RapportResponse
+from tomatoscan.api.schemas.reports import (
+    EvaluationResponse,
+    RapportEpoch,
+    RapportResponse,
+)
 
 router = APIRouter(tags=["Rapports"])
 
 # Chemin par défaut si REPORTS_PATH n'est pas défini dans .env
 CHEMIN_DEFAUT = "models/historique_20260624_161841.csv"
+
+# Chemin par défaut du rapport d'évaluation si EVALUATION_PATH n'est pas défini
+CHEMIN_EVALUATION_DEFAUT = "docs/rapport_evaluation_20260624_163236.json"
 
 
 @router.get(
@@ -96,3 +106,59 @@ def obtenir_rapport(
         meilleure_val_accuracy=meilleure_val_accuracy,
         historique=historique,
     )
+
+
+@router.get(
+    "/reports/evaluation",
+    response_model=EvaluationResponse,
+    responses={
+        401: {"description": "Token invalide, expiré ou absent."},
+        404: {
+            "description": "Rapport d'évaluation introuvable au chemin configuré (EVALUATION_PATH)."
+        },
+        500: {"description": "Erreur de lecture ou format JSON invalide."},
+    },
+)
+def obtenir_evaluation(
+    _utilisateur: str = Depends(obtenir_utilisateur_courant),
+) -> EvaluationResponse:
+    """
+    Retourne le rapport d'évaluation finale du modèle MobileNetV2 sur le jeu de test.
+
+    **Authentification requise** : `Authorization: Bearer <token>` — obtenu via `POST /auth/token`.
+
+    Lit le fichier JSON défini par `EVALUATION_PATH` dans `.env` (produit par
+    `model/evaluate.py`). Contient l'accuracy de test, la meilleure epoch, les
+    classes sous-performantes et le rapport de classification par classe.
+
+    **Codes d'erreur** :
+    - `401` : token manquant ou expiré
+    - `404` : rapport introuvable au chemin configuré dans `EVALUATION_PATH`
+    - `500` : erreur de lecture ou format JSON invalide
+    """
+    chemin_json = os.getenv("EVALUATION_PATH", CHEMIN_EVALUATION_DEFAUT)
+
+    # Vérification de l'existence du fichier avant lecture
+    if not os.path.isfile(chemin_json):
+        logger.warning(f"Rapport d'évaluation introuvable : {chemin_json}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Rapport d'évaluation introuvable : {chemin_json}",
+        )
+
+    # Lecture et validation du JSON d'évaluation
+    try:
+        with open(chemin_json, encoding="utf-8") as fichier:
+            donnees = json.load(fichier)
+        rapport = EvaluationResponse(**donnees)
+    except Exception as erreur:
+        logger.error(f"Erreur de lecture du rapport {chemin_json} : {erreur}")
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de la lecture du rapport d'évaluation.",
+        )
+
+    logger.info(
+        f"Rapport d'évaluation lu : {chemin_json}, accuracy_test={rapport.accuracy_test:.4f}"
+    )
+    return rapport

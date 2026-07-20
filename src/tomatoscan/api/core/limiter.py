@@ -11,6 +11,13 @@ from slowapi.util import get_remote_address
 
 # Instance partagée du rate limiter — identifie chaque client par son adresse IP
 # Cette instance est importée dans main.py (state) et dans les routes décorées
+#
+# Limite assumée : aucun `storage_uri` n'est fourni, slowapi retombe donc sur son
+# backend par défaut "memory://" (slowapi/extension.py). Les compteurs vivent dans
+# la mémoire du processus : ils repartent de zéro à chaque redémarrage et ne sont
+# partagés ni entre workers uvicorn ni entre réplicas du conteneur. Suffisant pour
+# le déploiement mono-worker actuel ; un backend Redis partagé serait nécessaire
+# pour une montée en charge multi-réplicas (voir core/owasp.md, section API4).
 limiteur = Limiter(key_func=get_remote_address)
 
 

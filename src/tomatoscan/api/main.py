@@ -28,7 +28,7 @@ load_dotenv()
 
 
 class EnteteSecuriteMiddleware:
-    """Ajoute des headers de sécurité HTTP sur chaque réponse (OWASP API7).
+    """Ajoute des headers de sécurité HTTP sur chaque réponse (OWASP API8).
 
     Middleware ASGI pur (scope/receive/send), pas BaseHTTPMiddleware : ce dernier
     exécute la suite de la requête dans une tâche anyio distincte de celle de la
@@ -60,11 +60,51 @@ class EnteteSecuriteMiddleware:
         await self.app(scope, receive, envoyer_avec_entetes)
 
 
-def _lire_cors_origins() -> list[str]:
-    """Lit CORS_ORIGINS depuis l'environnement et retourne une liste d'origines."""
-    valeur = os.getenv("CORS_ORIGINS", "*")
+def _lire_cors_origins() -> tuple[list[str], bool]:
+    """Lit CORS_ORIGINS et retourne le couple (origines autorisées, allow_credentials).
+
+    Garde-fou OWASP API8 (Security Misconfiguration) : la combinaison
+    `allow_origins=["*"]` + `allow_credentials=True` est interdite par la spec CORS,
+    et Starlette la contourne en renvoyant l'origine de la requête telle quelle avec
+    `Access-Control-Allow-Credentials: true` (cors.py, branche
+    `allow_all_origins and allow_credentials`) — n'importe quelle origine peut alors
+    émettre des requêtes authentifiées par cookie. CORS_ORIGINS absente du `.env`
+    suffisait à produire silencieusement cette configuration.
+
+    Comportement selon `APP_ENV` quand aucune origine explicite n'est configurée :
+    - hors `development` : `RuntimeError` au démarrage, l'API refuse de servir une
+      configuration CORS permissive en préproduction ou en production ;
+    - en `development` : WARNING loguru et repli sur `["*"]` **avec
+      `allow_credentials=False`**, seule forme du joker valide au regard de la spec.
+
+    Returns:
+        Tuple (liste des origines autorisées, valeur à passer à `allow_credentials`).
+    """
+    valeur = os.getenv("CORS_ORIGINS", "").strip()
     # Supporte plusieurs origines séparées par des virgules : "http://a.com,http://b.com"
-    return [origine.strip() for origine in valeur.split(",")]
+    origines = [origine.strip() for origine in valeur.split(",") if origine.strip()]
+
+    if origines and "*" not in origines:
+        return origines, True
+
+    env = os.getenv("APP_ENV", "development")
+    motif = "CORS_ORIGINS absente ou vide" if not origines else "CORS_ORIGINS vaut '*'"
+    if env != "development":
+        logger.error(
+            f"{motif} avec APP_ENV={env!r} : configuration CORS permissive refusée. "
+            "Renseigner CORS_ORIGINS avec les origines explicites du frontend."
+        )
+        raise RuntimeError(
+            f"{motif} : une origine explicite est obligatoire hors développement "
+            "(voir CORS_ORIGINS dans .env.example)."
+        )
+
+    logger.warning(
+        f"{motif} : repli sur allow_origins=['*'] avec allow_credentials=False "
+        "(toléré en développement uniquement). Renseigner CORS_ORIGINS avant tout "
+        "déploiement — voir .env.example."
+    )
+    return ["*"], False
 
 
 @asynccontextmanager
@@ -166,14 +206,18 @@ app.add_exception_handler(RateLimitExceeded, gestionnaire_limite_atteinte)
 # Ajouté et lu de façon identique (app.add_middleware), même gestionnaire d'exception,
 # mêmes limites par route (@limiteur.limit(...)) — comportement inchangé.
 app.add_middleware(SlowAPIASGIMiddleware)
+# _lire_cors_origins() décide aussi de allow_credentials : le joker '*' n'est jamais
+# combiné à allow_credentials=True (voir la docstring de la fonction).
+_origines_cors, _cors_credentials = _lire_cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_lire_cors_origins(),
-    allow_credentials=True,
+    allow_origins=_origines_cors,
+    allow_credentials=_cors_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Headers de sécurité ajoutés en dernier pour couvrir toutes les réponses (OWASP API7)
+# Headers de sécurité ajoutés en dernier pour couvrir toutes les réponses
+# (OWASP API8 — Security Misconfiguration, voir core/owasp.md)
 app.add_middleware(EnteteSecuriteMiddleware)
 
 # Inclusion des routes
@@ -186,4 +230,6 @@ app.include_router(users_router)
 
 # Endpoint Prometheus — exposé sur /metrics sans authentification pour le scraping
 # make_asgi_app() génère une app WSGI/ASGI standard compatible avec les agents Prometheus
+# Choix assumé et documenté : voir la section "/metrics — endpoint non authentifié"
+# de core/owasp.md (aucune donnée personnelle en label, restriction recommandée en prod).
 app.mount("/metrics", make_asgi_app())

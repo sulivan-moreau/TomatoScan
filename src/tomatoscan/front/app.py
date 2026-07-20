@@ -10,6 +10,7 @@ Lancement : `streamlit run src/tomatoscan/front/app.py`
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from utils import api_client
 
@@ -69,6 +70,34 @@ def inject_css():
     )
 
 
+def forcer_langue_francaise():
+    """Force l'attribut HTML `lang="fr"` sur la page (accessibilité C17).
+
+    Streamlit sert son index.html avec `lang="en"` codé en dur et n'expose aucun
+    paramètre pour le changer (ni dans st.set_page_config, ni dans config.toml,
+    version 1.58). Or l'application est intégralement francophone : sans
+    correction, les lecteurs d'écran annoncent le contenu avec une prononciation
+    anglaise.
+
+    Contournement documenté : on injecte un court script via components.html
+    (rendu dans une iframe de même origine) qui met à jour
+    `document.documentElement.lang` de la page parente. C'est la seule voie
+    propre disponible tant que Streamlit n'offre pas d'API dédiée ; à
+    réévaluer si une option native apparaît dans une version ultérieure.
+    Sans effet en environnement de test (AppTest n'exécute pas le JavaScript),
+    mais sans danger non plus : l'appel n'échoue pas.
+    """
+    components.html(
+        """
+        <script>
+        const doc = window.parent.document;
+        if (doc && doc.documentElement) { doc.documentElement.lang = "fr"; }
+        </script>
+        """,
+        height=0,
+    )
+
+
 def sidebar_header():
     """Affiche le logo et la déconnexion (si connecté)."""
     with st.sidebar:
@@ -95,6 +124,9 @@ def main():
         st.session_state.token = None
 
     inject_css()
+    # Accessibilité : force lang="fr" sur la page (app francophone servie en
+    # lang="en" par défaut par Streamlit) — voir forcer_langue_francaise().
+    forcer_langue_francaise()
 
     # Vérification du token JWT à chaque re-run : si expiré, vider la session
     token_actuel = st.session_state.get("token")
