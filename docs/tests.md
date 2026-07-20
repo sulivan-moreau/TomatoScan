@@ -17,7 +17,7 @@ Ferme le ticket [#21 — docs: plan de tests et rapport de couverture](https://g
 
 | Élément | Valeur |
 |---|---|
-| Nombre total de tests | 104 |
+| Nombre total de tests | 112 |
 | Framework | pytest + pytest-asyncio (mode auto) |
 | Couverture globale mesurée (`--cov=src/tomatoscan`) | ~83 % (tout le paquet : API + modèle + frontend + BDD) |
 | Couverture API mesurée (`--cov=src/tomatoscan/api`) | ~78 % (seuil CI : 75 %) |
@@ -41,9 +41,9 @@ Répartition par domaine :
 
 | Domaine | Fichiers | Nombre de tests |
 |---|---|---|
-| API (auth, sécurité, routes) | `tests/test_api/*.py` | 39 |
-| Modèle (prétraitement, entraînement, évaluation) | `tests/test_model/*.py` | 24 |
-| Frontend (client API, pages métier, navigation, gestion 401, régression JWT) | `tests/test_frontend/*.py` | 39 |
+| API (auth, sécurité, routes) | `tests/test_api/*.py` | 44 |
+| Modèle (prétraitement, entraînement, évaluation) | `tests/test_model/*.py` | 25 |
+| Frontend (client API, pages métier, navigation, gestion 401, régression JWT) | `tests/test_frontend/*.py` | 41 |
 | Base de données (modèles SQLAlchemy) | `tests/test_database/*.py` | 2 |
 
 Deux principes appliqués sur l'ensemble de la suite :
