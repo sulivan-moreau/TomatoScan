@@ -10,6 +10,8 @@ Expose :
 - predict()                — envoie une image, retourne le résultat de prédiction
 - get_history()            — récupère l'historique des prédictions de l'utilisateur
 - get_reports()            — récupère l'historique d'entraînement du modèle (GET /reports)
+- get_evaluation()         — récupère le rapport d'évaluation sur le jeu de test (GET /reports/evaluation)
+- get_confusion_matrix()   — récupère l'image de la matrice de confusion (GET /reports/confusion-matrix)
 - list_users()             — liste les comptes utilisateurs (admin uniquement)
 - create_user()            — crée un compte agriculteur (admin uniquement)
 - delete_user()            — supprime un compte utilisateur (admin uniquement)
@@ -461,3 +463,42 @@ def get_reports(token: str) -> dict:
         return reponse.json()
     except ValueError:
         raise ApiError("Réponse de l'API illisible (JSON attendu).")
+
+
+def get_evaluation(token: str) -> dict:
+    """Récupère le dernier rapport d'évaluation du modèle via GET /reports/evaluation.
+
+    Retourne un dict {accuracy_test, meilleure_accuracy_validation,
+    classes_sous_performantes, rapport_classification, ...}.
+    Lève ApiError (404 si aucun rapport n'a encore été généré) en cas d'erreur
+    HTTP ou réseau.
+    """
+    reponse = _requete_api(
+        "GET",
+        "/reports/evaluation",
+        token=token,
+        message_erreur_reseau="Impossible de joindre le serveur pour récupérer l'évaluation.",
+        message_erreur_defaut="Impossible de récupérer le rapport d'évaluation.",
+    )
+
+    try:
+        return reponse.json()
+    except ValueError:
+        raise ApiError("Réponse de l'API illisible (JSON attendu).")
+
+
+def get_confusion_matrix(token: str) -> bytes:
+    """Récupère l'image PNG de la matrice de confusion via GET /reports/confusion-matrix.
+
+    Retourne les octets bruts de l'image (à passer directement à st.image).
+    Lève ApiError (404 si aucune matrice n'a encore été générée) en cas
+    d'erreur HTTP ou réseau.
+    """
+    reponse = _requete_api(
+        "GET",
+        "/reports/confusion-matrix",
+        token=token,
+        message_erreur_reseau="Impossible de joindre le serveur pour récupérer la matrice de confusion.",
+        message_erreur_defaut="Impossible de récupérer la matrice de confusion.",
+    )
+    return reponse.content
