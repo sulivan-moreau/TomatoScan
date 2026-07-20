@@ -44,6 +44,7 @@ notebooks/
 docs/*
 !docs/rapport_evaluation_*.json
 !docs/confusion_matrix.png
+!docs/historique_*.csv
 README.md
 
 # ─── Bases de données locales ─────────────────────────────────────────────────

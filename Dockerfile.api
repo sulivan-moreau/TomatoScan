@@ -33,11 +33,12 @@ RUN uv sync --no-dev --no-install-project
 # Copie du code source de l'API
 COPY src/ ./src/
 
-# Rapports d'évaluation servis par l'API (/reports/evaluation lit le JSON,
-# /reports/confusion-matrix sert le PNG). EVALUATION_REPORT_DIR vaut ./docs par
-# défaut ; ces artefacts sont embarqués dans l'image car docs/ n'est pas monté
-# en volume en production.
-COPY docs/rapport_evaluation_*.json docs/confusion_matrix.png ./docs/
+# Rapports du modèle servis par l'API, embarqués dans l'image car docs/ n'est pas
+# monté en volume en production :
+#   - /reports (historique d'entraînement) lit REPORTS_PATH → docs/historique_*.csv
+#   - /reports/evaluation lit le JSON, /reports/confusion-matrix sert le PNG
+#     (EVALUATION_REPORT_DIR = ./docs par défaut)
+COPY docs/rapport_evaluation_*.json docs/confusion_matrix.png docs/historique_*.csv ./docs/
 
 # Finalisation : installation du package tomatoscan dans l'environnement virtuel
 RUN uv sync --no-dev
