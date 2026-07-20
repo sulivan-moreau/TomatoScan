@@ -58,12 +58,28 @@ def inject_css():
         /* Titres */
         h1, h2, h3 {{ color: #1b2420; letter-spacing: -0.01em; }}
 
-        /* Boutons primaires */
+        /* Boutons primaires — ombre douce + léger relief au survol */
         .stButton > button {{
             background: {VERT}; color: #ffffff; border: none;
-            border-radius: 9px; padding: 0.55rem 1.1rem; font-weight: 600;
+            border-radius: 10px; padding: 0.6rem 1.2rem; font-weight: 600;
+            box-shadow: 0 2px 6px rgba(27,67,50,0.18);
+            transition: transform .08s ease, box-shadow .15s ease, background .15s ease;
         }}
-        .stButton > button:hover {{ background: {VERT_FONCE}; color: #fff; }}
+        .stButton > button:hover {{
+            background: {VERT_FONCE}; color: #fff;
+            box-shadow: 0 4px 12px rgba(27,67,50,0.28);
+            transform: translateY(-1px);
+        }}
+        .stButton > button:active {{ transform: translateY(0); }}
+
+        /* Images (aperçus) arrondies */
+        [data-testid="stImage"] img {{ border-radius: 12px; }}
+
+        /* Légendes plus discrètes */
+        [data-testid="stCaptionContainer"] {{ color: #5b6b62; }}
+
+        /* Barre de progression arrondie */
+        .stProgress > div > div {{ border-radius: 999px; }}
         </style>
         """,
         unsafe_allow_html=True,

@@ -187,11 +187,11 @@ st.subheader("Résumé")
 colonne_a, colonne_b = st.columns(2)
 with colonne_a:
     with st.container(key="metric_farmers"):
-        st.caption("Agriculteurs")
+        st.caption("👥 Agriculteurs inscrits")
         st.markdown(f"### {nb_agriculteurs}")
 with colonne_b:
     with st.container(key="metric_predictions"):
-        st.caption("Prédictions totales")
+        st.caption("🔬 Prédictions totales")
         st.markdown(f"### {nb_predictions}")
 
 if nb_agriculteurs == 0:
@@ -202,10 +202,21 @@ if nb_agriculteurs == 0:
 
 st.markdown(
     """<style>
-    .st-key-metric_farmers { background:#2d6a4f; border-radius:12px; padding:1.1rem 1.4rem; }
-    .st-key-metric_farmers p, .st-key-metric_farmers h3 { color:#ffffff !important; }
-    .st-key-metric_predictions { background:#1b4332; border-radius:12px; padding:1.1rem 1.4rem; }
+    /* Cartes chiffres clés (agriculteurs / prédictions) : dégradé + relief */
+    .st-key-metric_farmers { background:linear-gradient(135deg,#2d6a4f,#245a42);
+        border-radius:14px; padding:1.2rem 1.5rem; box-shadow:0 4px 14px rgba(27,67,50,.22); }
+    .st-key-metric_predictions { background:linear-gradient(135deg,#1b4332,#123024);
+        border-radius:14px; padding:1.2rem 1.5rem; box-shadow:0 4px 14px rgba(27,67,50,.28); }
+    .st-key-metric_farmers p, .st-key-metric_farmers h3,
     .st-key-metric_predictions p, .st-key-metric_predictions h3 { color:#ffffff !important; }
+    .st-key-metric_farmers h3, .st-key-metric_predictions h3 {
+        font-size:2.4rem; margin:.1rem 0 0 0; line-height:1.1; }
+
+    /* Métriques natives (epochs, précision, accuracy) en cartes blanches */
+    [data-testid="stMetric"] { background:#ffffff; border:1px solid #e3ece6;
+        border-radius:12px; padding:1rem 1.2rem; box-shadow:0 1px 4px rgba(27,67,50,.06); }
+    [data-testid="stMetricValue"] { color:#1b4332; }
+    [data-testid="stMetricLabel"] p { color:#5b6b62; }
     </style>""",
     unsafe_allow_html=True,
 )
