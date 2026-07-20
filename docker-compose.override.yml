@@ -34,12 +34,14 @@ services:
       postgres_preprod:
         condition: service_healthy
 
-  # ─── PostgreSQL de docker-compose.yml désactivé pour cette stack ─────────────
-  # Le profil "production_only" empêche son démarrage automatique ici — cette
-  # stack (develop) utilise postgres_preprod ci-dessous, jamais ce service-là.
-  postgres:
-    profiles:
-      - production_only
+  # ─── PostgreSQL de docker-compose.yml — laissé actif ────────────────────────
+  # L'api de docker-compose.yml déclare "depends_on: postgres" pour garantir
+  # l'ordre de démarrage sur Coolify (qui n'applique que ce fichier-là). On ne
+  # peut pas retirer cette dépendance via un override (docker compose fusionne les
+  # depends_on), donc le service "postgres" doit rester résoluble ici. En préprod
+  # locale il tourne donc à côté de postgres_preprod (celui que l'api utilise
+  # réellement via DATABASE_URL) : un conteneur inutilisé mais inoffensif, au prix
+  # duquel les deux fichiers compose restent valides ensemble.
 
   # ─── PostgreSQL préprod — base et volume dédiés, séparés de la prod ──────────
   postgres_preprod:
