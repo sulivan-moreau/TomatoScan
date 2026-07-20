@@ -27,14 +27,19 @@ services:
       - ./models:/app/models:ro
     networks:
       - coolify
+    # L'api ouvre une connexion PostgreSQL dès son démarrage (lifespan : create_all +
+    # bootstrap_admin). Sans cette attente, elle démarrait AVANT que postgres accepte
+    # les connexions et plantait ("api unhealthy" au déploiement Coolify). Le déploiement
+    # Coolify n'applique que ce fichier (pas docker-compose.override.yml), l'ordre de
+    # démarrage doit donc être garanti ici.
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      # Vérifie que l'API répond sur /health avant de démarrer le frontend
-      # start_period/retries élargis (20s/3 → 60s/5) : le lifespan de l'API attend
-      # désormais postgres_preprod (service_healthy) avant même de démarrer, puis
-      # fait des allers-retours réseau réels (create_all + bootstrap_admin) avant
-      # de charger le modèle MobileNetV2 — un chemin de démarrage plus long qu'avec
-      # SQLite, que l'ancien budget (20s/3) ne couvrait plus de façon fiable
-      # (voir docs/audit_impact_derniers_changements.md).
+      # Vérifie que l'API répond sur /health avant de démarrer le frontend.
+      # start_period/retries élargis (60s/5) : le lifespan fait des allers-retours
+      # réseau réels (connexion PostgreSQL + create_all + bootstrap_admin) avant de
+      # charger le modèle MobileNetV2 — un démarrage plus long qu'avec SQLite.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
