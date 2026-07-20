@@ -33,9 +33,6 @@ mlflow.db
 .DS_Store
 Thumbs.db
 
-# Tests locaux uniquement — ne pas versionner
-docker-compose.local.yml
-
 # Couverture de tests
 .coverage
 htmlcov/

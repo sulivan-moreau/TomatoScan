@@ -1,0 +1,20 @@
+# Point de contact pour les alertes Grafana Unified Alerting — canal e-mail.
+#
+# L'adresse ci-dessous est un espace réservé à remplacer avant tout déploiement
+# réel : ce fichier est versionné (pas de secret dedans), seuls les identifiants
+# SMTP (hôte, utilisateur, mot de passe) sont sensibles et lus depuis les
+# variables d'environnement GF_SMTP_* du service grafana (voir docker-compose.yml
+# et .env.example) — jamais écrits en dur ici.
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: email-tomatoscan
+    receivers:
+      - uid: tomatoscan-email-receiver
+        type: email
+        settings:
+          # À REMPLACER par la vraie adresse de notification avant déploiement
+          addresses: alerte-tomatoscan@a-remplacer.fr
+          singleEmail: true
