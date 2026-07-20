@@ -73,10 +73,14 @@ def _lire_cors_origins() -> tuple[list[str], bool]:
     suffisait à produire silencieusement cette configuration.
 
     Comportement selon `APP_ENV` quand aucune origine explicite n'est configurée :
-    - hors `development` : `RuntimeError` au démarrage, l'API refuse de servir une
-      configuration CORS permissive en préproduction ou en production ;
-    - en `development` : WARNING loguru et repli sur `["*"]` **avec
+    - environnements de production (tout `APP_ENV` hors des valeurs de
+      développement/test ci-dessous) : `RuntimeError` au démarrage, l'API refuse
+      de servir une configuration CORS permissive en préproduction ou production ;
+    - développement et test/CI : WARNING loguru et repli sur `["*"]` **avec
       `allow_credentials=False`**, seule forme du joker valide au regard de la spec.
+      Les environnements de test (`APP_ENV=test`, utilisé par la CI) sont traités
+      comme non productifs : ils n'ont pas de frontend réel dont il faudrait
+      restreindre l'origine.
 
     Returns:
         Tuple (liste des origines autorisées, valeur à passer à `allow_credentials`).
@@ -88,22 +92,32 @@ def _lire_cors_origins() -> tuple[list[str], bool]:
     if origines and "*" not in origines:
         return origines, True
 
+    # Environnements non productifs : le joker CORS permissif y est toléré car il
+    # n'existe pas de frontend réel dont il faudrait restreindre l'origine.
+    ENVIRONNEMENTS_NON_PRODUCTION = {
+        "development",
+        "dev",
+        "local",
+        "test",
+        "testing",
+        "ci",
+    }
     env = os.getenv("APP_ENV", "development")
     motif = "CORS_ORIGINS absente ou vide" if not origines else "CORS_ORIGINS vaut '*'"
-    if env != "development":
+    if env not in ENVIRONNEMENTS_NON_PRODUCTION:
         logger.error(
             f"{motif} avec APP_ENV={env!r} : configuration CORS permissive refusée. "
             "Renseigner CORS_ORIGINS avec les origines explicites du frontend."
         )
         raise RuntimeError(
-            f"{motif} : une origine explicite est obligatoire hors développement "
+            f"{motif} : une origine explicite est obligatoire en production "
             "(voir CORS_ORIGINS dans .env.example)."
         )
 
     logger.warning(
         f"{motif} : repli sur allow_origins=['*'] avec allow_credentials=False "
-        "(toléré en développement uniquement). Renseigner CORS_ORIGINS avant tout "
-        "déploiement — voir .env.example."
+        f"(toléré en {env}). Renseigner CORS_ORIGINS avant tout déploiement "
+        "en production — voir .env.example."
     )
     return ["*"], False
 
