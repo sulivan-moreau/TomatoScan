@@ -148,6 +148,7 @@ colonne_image, colonne_resultat = st.columns(2, gap="large")
 
 # --- Colonne gauche : upload + aperçu + bouton ------------------------------
 with colonne_image:
+    st.subheader("1 · Importer")
     with st.container(key="upload_zone"):
         st.markdown(
             "##### :material/add_photo_alternate: Glissez-déposez une photo de feuille"
@@ -180,7 +181,8 @@ with colonne_image:
 
     st.markdown(
         """<style>
-        .st-key-upload_zone { background:#e8f1ea; border:2px dashed #2d6a4f; border-radius:14px; padding:1.5rem; text-align:center; }
+        .st-key-upload_zone { background:#e8f1ea; border:2px dashed #2d6a4f; border-radius:14px; padding:1.5rem; text-align:center; transition: background .15s ease, border-color .15s ease; }
+        .st-key-upload_zone:hover { background:#dcede2; border-color:#1b4332; }
         .st-key-upload_zone section[data-testid="stFileUploaderDropzone"] { background:transparent; border:none; }
         </style>""",
         unsafe_allow_html=True,
@@ -233,10 +235,12 @@ with colonne_resultat:
             # est porté par le libellé « Tomate saine ».
             st.markdown(
                 """
-                <div style="background:#2d6a4f;color:#ffffff;border-radius:12px;
-                            padding:18px 20px;display:flex;align-items:center;gap:0.6rem;">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="#ffffff" aria-hidden="true"><path d="M6.05 8.05c-2.73 2.73-2.73 7.15-.02 9.88 1.47-3.4 4.09-6.24 7.36-7.93-2.77 2.34-4.71 5.61-5.39 9.32 2.6 1.23 5.8.78 7.95-1.37C19.43 14.47 20 4 20 4S9.53 4.57 6.05 8.05z"/></svg>
-                    <span style="font-size:1.25rem;font-weight:700;">Tomate saine</span>
+                <div style="background:linear-gradient(135deg,#2d6a4f,#1b4332);
+                            color:#ffffff;border-radius:14px;padding:20px 22px;
+                            display:flex;align-items:center;gap:0.6rem;
+                            box-shadow:0 6px 18px rgba(27,67,50,0.28);">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="#ffffff" aria-hidden="true"><path d="M6.05 8.05c-2.73 2.73-2.73 7.15-.02 9.88 1.47-3.4 4.09-6.24 7.36-7.93-2.77 2.34-4.71 5.61-5.39 9.32 2.6 1.23 5.8.78 7.95-1.37C19.43 14.47 20 4 20 4S9.53 4.57 6.05 8.05z"/></svg>
+                    <span style="font-size:1.3rem;font-weight:700;">Tomate saine</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -247,15 +251,16 @@ with colonne_resultat:
             maladie_fr = api_client.fr_label(classe)
             st.markdown(
                 f"""
-                <div style="background:#c1121f;color:#ffffff;border-radius:12px;
-                            padding:18px 20px;">
+                <div style="background:linear-gradient(135deg,#e01e2b,#c1121f);
+                            color:#ffffff;border-radius:14px;padding:20px 22px;
+                            box-shadow:0 6px 18px rgba(193,18,31,0.26);">
                     <div style="display:flex;align-items:center;gap:0.5rem;
                                 font-size:0.9rem;font-weight:600;letter-spacing:.04em;
                                 text-transform:uppercase;opacity:.95;">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="#ffffff" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
                         Maladie détectée
                     </div>
-                    <div style="font-size:1.35rem;font-weight:700;margin-top:2px;">{maladie_fr}</div>
+                    <div style="font-size:1.4rem;font-weight:700;margin-top:2px;">{maladie_fr}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -273,9 +278,13 @@ with colonne_resultat:
                 st.write(RECOMMANDATIONS[classe])
 
         # Score de confiance : barre + valeur en pourcentage.
-        st.markdown("**Confiance**")
+        st.markdown("**Confiance du diagnostic**")
         st.progress(int(round(pourcent)))
-        st.markdown(f"### {pourcent:.2f} %")
+        st.markdown(
+            f"<div style='text-align:right;font-size:1.55rem;font-weight:700;"
+            f"color:#2d6a4f;margin-top:-6px;'>{pourcent:.2f}&nbsp;%</div>",
+            unsafe_allow_html=True,
+        )
     else:
         st.info(
             "Importez une image puis cliquez sur « Analyser » pour afficher le diagnostic."

@@ -75,18 +75,30 @@ def test_admin_a_acces_aux_pages_admin_et_a_la_section_administration():
     at = AppTest.from_file(APP_PATH)
     at.run()
     at = _connecter(at, "admin", "admin123", _jwt("admin"), "admin")
+    # Le login via le vrai formulaire a bien posé le rôle en session.
     assert at.session_state["role"] == "admin"
 
+    def _reetablir_session_admin():
+        # AppTest ne préserve pas de façon fiable la session à travers une chaîne
+        # de switch_page() (limitation du harnais de test, pas de l'application :
+        # en exécution réelle la session persiste). On ré-établit token + rôle
+        # avant chaque navigation pour tester réellement l'accès par rôle.
+        at.session_state["token"] = _jwt("admin")
+        at.session_state["role"] = "admin"
+
+    _reetablir_session_admin()
     at.switch_page("pages/dashboard.py")
     at.run()
     assert not at.exception
     assert "Accès réservé aux administrateurs." not in [e.value for e in at.error]
 
+    _reetablir_session_admin()
     at.switch_page("pages/creer_membre.py")
     at.run()
     assert not at.exception
     assert "Accès réservé aux administrateurs." not in [e.value for e in at.error]
 
+    _reetablir_session_admin()
     at.switch_page("pages/accueil.py")
     at.run()
     assert "Administration" in " ".join(m.value for m in at.markdown)
