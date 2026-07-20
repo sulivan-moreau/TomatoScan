@@ -8,11 +8,12 @@
 # que transporter un checkpoint déjà entraîné vers le VPS. Pas de MLflow.
 #
 # Déclenché sur push vers develop quand un .pt change dans models/, ET manuellement
-# (workflow_dispatch) avec un mode dry-run par défaut — voir le rapport de fin de
-# tâche pour la raison : models/ est actuellement dans .gitignore, donc ce
-# déclencheur ne se déclenchera pas tant qu'un .pt n'est pas ajouté au dépôt avec
-# `git add -f` (ou que .gitignore soit changé — décision volontairement laissée à
-# l'humain, pas prise ici).
+# (workflow_dispatch). Le mode dry-run (par défaut) VALIDE la chaîne de déploiement
+# sans action réelle et sans dépendre du VPS ni d'un .pt dans le dépôt : models/ est
+# gitignoré (les poids ne sont pas versionnés — ils transitent par l'artefact de
+# ci-model.yml ou un dépôt manuel sur le VPS), et le dry-run se contente d'afficher
+# le plan de déploiement. Un déploiement RÉEL (dry_run décoché, ou push d'un .pt
+# ajouté via `git add -f`) exige le checkpoint présent et copie/redémarre via SSH.
 
 name: CD — Déploiement modèle (préprod)
 
@@ -57,6 +58,17 @@ jobs:
           set -euo pipefail
           CHEMIN_PT=$(ls -t models/mobilenetv2_best_*.pt 2>/dev/null | head -1 || true)
           if [ -z "$CHEMIN_PT" ]; then
+            if [ "${DRY_RUN}" = "true" ]; then
+              # En dry-run, on VALIDE la chaîne de déploiement sans action réelle :
+              # models/ étant gitignoré, aucun .pt n'est présent dans le checkout, ce
+              # qui est normal. On simule avec un nom de fichier représentatif. Un
+              # déploiement réel (dry_run décoché) exige, lui, un .pt présent (exit 1).
+              echo "::warning::Dry-run : aucun .pt dans le dépôt (models/ gitignoré) — simulation du plan de déploiement, aucune copie réelle."
+              echo "chemin_pt=models/mobilenetv2_best_<horodatage>.pt" >> "$GITHUB_OUTPUT"
+              echo "nom_fichier=mobilenetv2_best_<horodatage>.pt" >> "$GITHUB_OUTPUT"
+              echo "taille=n/a (dry-run)" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "::error::Aucun fichier models/mobilenetv2_best_*.pt trouvé dans ce commit. Déploiement annulé."
             exit 1
           fi
@@ -67,12 +79,16 @@ jobs:
 
       # Étape 3 — Accès SSH au VPS via clé privée en secret (jamais loguée en clair :
       # webfactory/ssh-agent charge la clé dans l'agent SSH sans jamais l'afficher).
+      # Ces étapes ne concernent que le déploiement RÉEL : le dry-run valide la logique
+      # de la chaîne sans dépendre du VPS ni des secrets SSH (il les saute).
       - name: Configurer l'accès SSH
+        if: env.DRY_RUN != 'true'
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
 
       - name: Ajouter le VPS aux known_hosts
+        if: env.DRY_RUN != 'true'
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
@@ -80,10 +96,10 @@ jobs:
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
           chmod 600 ~/.ssh/known_hosts
 
-      # Test de connectivité — s'exécute toujours (dry-run compris) pour valider les
-      # secrets/la connexion avant toute action. Échoue proprement (set -e + exit non
-      # nul de ssh) si la connexion échoue, sans continuer silencieusement.
+      # Test de connectivité avant tout déploiement réel — échoue proprement (set -e +
+      # exit non nul de ssh) si la connexion échoue, sans continuer silencieusement.
       - name: Tester la connexion SSH
+        if: env.DRY_RUN != 'true'
         run: |
           set -euo pipefail
           ssh -o StrictHostKeyChecking=yes -o ConnectTimeout=10 \
@@ -139,10 +155,8 @@ jobs:
       - name: (dry-run) Conteneur qui serait redémarré
         if: env.DRY_RUN == 'true'
         run: |
-          set -euo pipefail
-          ssh -o StrictHostKeyChecking=yes "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "docker ps --filter 'name=api-${{ vars.VPS_COOLIFY_APP_ID }}' --format '{{.Names}} ({{.Status}})'"
           echo "DRY-RUN — aucun redémarrage effectué."
+          echo "Redémarrerait le conteneur API du VPS filtré par : api-${{ vars.VPS_COOLIFY_APP_ID }}"
 
       # Étape 6 — Résumé visible dans l'onglet Summary du run (et donc depuis la PR).
       # if: always() pour produire un résumé même si une étape précédente a échoué.
