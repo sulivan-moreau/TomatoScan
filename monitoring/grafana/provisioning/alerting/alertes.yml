@@ -12,7 +12,14 @@ groups:
     rules:
       - uid: tomatoscan-error-rate
         title: "Taux d'erreurs TomatoScan élevé"
-        # Condition C = seuil sur la requête A
+        # Condition C = seuil sur B (valeur réduite de A), pas directement sur A :
+        # une requête Prometheus sur une plage de temps (relativeTimeRange 300-0)
+        # renvoie une série temporelle, pas une valeur unique — le seuil (refId C)
+        # exige une donnée "réduite" à un seul point, d'où l'étape B ci-dessous.
+        # Bug réel trouvé et corrigé après un test en conditions réelles (trafic
+        # d'erreurs simulé) : sans l'étape B, l'évaluation échouait systématiquement
+        # avec "invalid format of evaluation results... only reduced data can be
+        # alerted on" — la règle restait bloquée en erreur, jamais déclenchée.
         condition: C
         data:
           # Requête A — taux d'erreurs sur 5 minutes
@@ -24,7 +31,18 @@ groups:
             model:
               expr: "sum(rate(tomatoscan_errors_total[5m]))"
               refId: A
-          # Condition C — seuil > 0.1 req/s
+          # Étape B — réduit la série temporelle de A à sa dernière valeur
+          - refId: B
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
+          # Condition C — seuil > 0.1 req/s, appliqué à la valeur réduite B
           - refId: C
             relativeTimeRange:
               from: 0
@@ -33,7 +51,7 @@ groups:
             model:
               type: threshold
               refId: C
-              expression: A
+              expression: B
               conditions:
                 - evaluator:
                     type: gt
@@ -43,7 +61,7 @@ groups:
                     type: and
                   query:
                     params:
-                      - A
+                      - B
                   reducer:
                     type: last
         # L'alerte se déclenche après 1 minute de dépassement continu

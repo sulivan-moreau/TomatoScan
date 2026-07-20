@@ -80,6 +80,37 @@ async def test_predict_modele_indisponible(mock_dispo, client):
     assert reponse.status_code == 503
 
 
+@patch(_DISPONIBLE, side_effect=RuntimeError("panne simulée, non prévue par le code"))
+async def test_predict_erreur_non_prevue_couverte_par_le_handler_generique(
+    mock_dispo, client
+):
+    """Une exception qui ne correspond à aucun cas géré explicitement dans la
+    route (ici modele_disponible() qui plante au lieu de retourner un bool)
+    doit être interceptée par le handler générique de main.py, pas remonter
+    telle quelle : 500 avec un message générique, pas un plantage silencieux.
+
+    Client local avec raise_app_exceptions=False : le client partagé (fixture
+    "client") laisse volontairement remonter les exceptions internes de l'ASGI
+    app pour faciliter le débogage des autres tests — ici c'est justement ce
+    comportement de production (l'exception convertie en réponse 500) qu'on
+    veut vérifier, donc on le désactive pour ce test précis uniquement.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    from tomatoscan.api.main import app
+
+    token = await _obtenir_token_valide(client)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        reponse = await ac.post(
+            "/predict",
+            headers={"Authorization": f"Bearer {token}"},
+            files={"fichier": ("feuille.jpg", _creer_image_jpg(), "image/jpeg")},
+        )
+    assert reponse.status_code == 500
+    assert reponse.json()["detail"] == "Erreur interne du serveur."
+
+
 @pytest.mark.parametrize(
     ("nom_fichier", "contenu", "type_contenu"),
     [

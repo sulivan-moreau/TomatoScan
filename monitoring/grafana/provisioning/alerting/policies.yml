@@ -1,0 +1,12 @@
+# Politique de notification par défaut — route toutes les alertes (une seule
+# règle existe actuellement, voir alertes.yml) vers le point de contact e-mail.
+# Un seul point de contact suffit pour ce projet : pas besoin de règles de
+# routage plus fines (par sévérité, par équipe, etc.) tant qu'une seule alerte existe.
+
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: email-tomatoscan
+    group_by:
+      - alertname

@@ -119,6 +119,7 @@ async def predire_maladie(
 
     # Vérification que le modèle est disponible
     if not model_service.modele_disponible():
+        logger.error("Prédiction refusée : modèle indisponible (503).")
         errors_total.labels(type_erreur="modele_indisponible").inc()
         raise HTTPException(
             status_code=503,

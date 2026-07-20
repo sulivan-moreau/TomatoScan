@@ -1,0 +1,29 @@
+services:
+  # ─── Surcharge locale de l'API : force une DATABASE_URL compatible avec le
+  # réseau Docker (hôte "postgres", pilote async asyncpg), au cas où le
+  # DATABASE_URL du .env local pointe vers autre chose (SQLite local, hôte
+  # différent) pour un usage hors Docker. Réutilise les identifiants déjà
+  # présents dans .env (POSTGRES_USER/PASSWORD/DB), jamais de valeur en dur.
+  api:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+  prometheus:
+    extends:
+      file: docker-compose.yml
+      service: prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    extends:
+      file: docker-compose.yml
+      service: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+
+networks:
+  coolify:
+    external: true

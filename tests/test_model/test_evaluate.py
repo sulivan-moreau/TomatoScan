@@ -108,6 +108,21 @@ def test_afficher_confusion_matrix_classe_absente_ne_plante_plus(mock_show):
     mock_show.assert_called_once()
 
 
+def test_afficher_confusion_matrix_avec_chemin_sortie_sauvegarde_un_fichier(tmp_path):
+    """chemin_sortie fourni → l'image est sauvegardée sur disque (utilisé par
+    l'API pour GET /reports/confusion-matrix), plt.show() n'est pas appelé."""
+    labels_reels = list(range(10))
+    predictions = list(range(10))
+    chemin_image = tmp_path / "confusion_matrix.png"
+
+    afficher_confusion_matrix(
+        labels_reels, predictions, NOMS_CLASSES, chemin_sortie=str(chemin_image)
+    )
+
+    assert chemin_image.exists()
+    assert chemin_image.stat().st_size > 0
+
+
 def _labels_avec_accuracy_connue():
     """10 échantillons (1 par classe), 8 corrects et 2 erreurs connues à
     l'avance → accuracy exacte de 0.8."""
