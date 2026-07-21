@@ -111,6 +111,7 @@ async def predire_maladie(
     contenu = await fichier.read()
 
     if len(contenu) > TAILLE_MAX_OCTETS:
+        logger.warning(f"Fichier trop volumineux refusé : {len(contenu)} octets.")
         errors_total.labels(type_erreur="fichier_trop_lourd").inc()
         raise HTTPException(
             status_code=400,
