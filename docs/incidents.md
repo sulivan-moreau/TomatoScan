@@ -203,12 +203,43 @@ la résolution de l'incident 1.
 
 ---
 
+## Incident 4 — Déploiement préprod en échec : volume PostgreSQL figé sur un ancien mot de passe
+
+**Résolu en conditions réelles le 20/07/2026**, correctif **opérationnel sur le VPS** — pas de commit de code dédié (voir la note de traçabilité en fin de document).
+
+- **Symptôme** — Le déploiement de préproduction échoue à **18 h 12** : l'API tourne en
+  *restart-loop*, avec une `InvalidPasswordError` PostgreSQL au démarrage. La règle d'alerte
+  Grafana (seuil d'erreurs, C20) s'est déclenchée d'elle-même sur cette panne réelle.
+- **Diagnostic** — Mené en quelques minutes grâce à la procédure éprouvée sur un incident
+  PostgreSQL antérieur. Le **volume** PostgreSQL de la préproduction avait été initialisé avec
+  un ancien mot de passe et **jamais resynchronisé** : `POSTGRES_PASSWORD` n'est appliqué qu'à
+  la **création** du volume, pas aux démarrages suivants. Une hypothèse alternative — collision
+  DNS entre les services `postgres` des stacks prod et préprod sur le réseau Docker partagé — a
+  été **investiguée puis écartée par preuve** (`nslookup` → `NXDOMAIN` ; `pg_stat_activity` :
+  chaque API connectée à sa propre base).
+- **Cause racine** — Désynchronisation entre le mot de passe **stocké dans le volume**
+  PostgreSQL (figé à l'initialisation) et celui attendu par `DATABASE_URL`.
+- **Correction** (opérationnelle, sur le VPS) — `ALTER USER … WITH PASSWORD` aligné sur
+  `DATABASE_URL`, puis redémarrage du conteneur `front` resté en état `Created`. **Redéploiement
+  Coolify réussi à 19 h 49.**
+- **Vérification** — API `healthy`, plus de *restart-loop* ; redéploiement complet réussi,
+  application de nouveau fonctionnelle en préproduction.
+- **Prévention** — Tout changement de secret PostgreSQL se fait désormais en **trois points
+  atomiques, toujours ensemble** : (1) la variable `POSTGRES_PASSWORD`, (2) `DATABASE_URL`,
+  (3) `ALTER USER … WITH PASSWORD` sur la base existante — car le volume conserve l'ancien mot
+  de passe tant qu'on ne le réaligne pas explicitement.
+
+---
+
 ## Traçabilité : issues vs pull requests
 
 Vérifié par `git log` : les commits de correction (`fix/*`) de ce projet sont
 tracés par leur **numéro de pull request** (via le commit de merge), **pas** par
 un numéro d'*issue* GitHub. Aucun des commits d'incident ci-dessus (`da4f786`,
-`b48cf4c`, `56a18a2`, `4732bbe`) ne référence d'issue. Les *issues* n'ont été
+`b48cf4c`, `56a18a2`, `4732bbe`) ne référence d'issue. L'**incident 4** n'a, lui, aucun
+commit de code : résolu **en direct sur le VPS** (`ALTER USER`, redémarrage de conteneur),
+c'est un correctif *opérationnel* tracé par la procédure de préproduction du 20/07 et par la
+présente fiche, pas par un diff Git. Les *issues* n'ont été
 utilisées que sur les commits de fonctionnalité (`feat:` / `ci:` — ex. issues
 #10 à #39). Je le note honnêtement plutôt que d'inventer des liens d'issue
 inexistants ; la chaîne branche `fix/*` → commit → PR → merge reste vérifiable

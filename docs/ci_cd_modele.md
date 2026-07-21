@@ -111,12 +111,15 @@ existante, aucun MLflow utilisé sur ce projet.
 **Étapes** (voir `.github/workflows/cd-model.yml`) :
 
 1. Checkout du code.
-2. Vérifie la présence d'un fichier `models/mobilenetv2_best_*.pt` dans le commit —
-   échoue explicitement (pas silencieusement) si absent.
-3. Configure l'accès SSH au VPS via une clé privée chargée dans l'agent SSH (jamais
-   affichée en clair dans les logs).
-4. Teste la connexion SSH — s'exécute même en dry-run, pour valider les secrets/la
-   connexion avant toute action.
+2. Vérifie la présence d'un fichier `models/mobilenetv2_best_*.pt`. En **déploiement réel**,
+   échoue explicitement (pas silencieusement) si absent ; en **dry-run**, émet un
+   avertissement et simule le plan (`models/` étant gitignoré, aucun `.pt` n'est présent au
+   checkout — le dry-run reste ainsi autonome, sans dépendre d'un `.pt` dans le dépôt).
+3. *(si pas dry-run)* Configure l'accès SSH au VPS via une clé privée chargée dans l'agent
+   SSH (jamais affichée en clair dans les logs).
+4. *(si pas dry-run)* Teste la connexion SSH. Depuis le correctif rendant le dry-run
+   autonome, **toutes les étapes SSH (3 à 6) sont sautées en dry-run** : la simulation ne
+   dépend ni du VPS ni des secrets SSH.
 5. *(si pas dry-run)* Copie le `.pt` sur le VPS, puis met à jour un lien symbolique
    stable `mobilenetv2_current.pt` pointant vers ce fichier — nécessaire car
    `MODEL_PATH` (`.env` préprod) référence un nom de fichier horodaté fixe.
