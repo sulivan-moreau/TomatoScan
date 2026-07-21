@@ -187,25 +187,6 @@ permissive ne peut plus atteindre la préproduction ou la production silencieuse
 - `.env.example` — `CORS_ORIGINS`, `APP_ENV`
 - `.gitignore` — `.env` exclu
 
-### Chargement du modèle (`torch.load` avec `weights_only=False`)
-
-Le checkpoint MobileNetV2 est chargé avec `torch.load(..., weights_only=False)`
-(`services/model_service.py`, `model/evaluate.py`) — nécessaire car le checkpoint contient
-des objets Python (la liste des noms de classes), pas uniquement des tenseurs. Ce réglage
-désérialise potentiellement du code arbitraire : un fichier `.pt` piégé pourrait exécuter
-du code au chargement.
-
-**Pourquoi c'est acceptable ici :** le `.pt` n'est **jamais** téléchargé depuis une source
-externe. Il provient exclusivement de notre propre pipeline d'entraînement (`train.py`) et
-est déposé sur le volume du VPS via `cd-model.yml` (accès SSH authentifié). La source est
-donc de confiance : aucun canal ne permet à un attaquant de fournir un checkpoint arbitraire.
-Si le modèle venait un jour d'un tiers, il faudrait repasser à `weights_only=True` (chargement
-du seul `state_dict`) ou vérifier une somme de contrôle signée avant chargement.
-
-**Fichiers :**
-- `src/tomatoscan/api/services/model_service.py` — `torch.load(..., weights_only=False)`
-- `src/tomatoscan/model/evaluate.py` — idem, commentaire sur la nécessité fonctionnelle
-
 ---
 
 ## `/metrics` — endpoint Prometheus non authentifié (choix assumé)
@@ -317,4 +298,21 @@ pour ne pas laisser croire à un item 2023 qui n'existe pas.
 | `/metrics` non authentifié | ⚠️ | Choix assumé (scraping interne, aucune donnée personnelle) — restriction proxy recommandée en production |
 
 Légende : ✅ mesure implémentée · ⚠️ limite assumée documentée · ➖ non applicable en l'état.
+
+---
+
+## Chargement du modèle (`torch.load` avec `weights_only=False`)
+
+Le checkpoint MobileNetV2 est chargé avec `torch.load(..., weights_only=False)`
+(`src/tomatoscan/api/services/model_service.py`, `src/tomatoscan/model/evaluate.py`) —
+nécessaire car le checkpoint contient des objets Python (la liste des noms de classes),
+pas uniquement des tenseurs. Ce réglage **désérialise potentiellement du code arbitraire** :
+un fichier `.pt` piégé pourrait exécuter du code au chargement.
+
+**Pourquoi c'est acceptable ici :** le `.pt` n'est **jamais** téléchargé depuis une source
+externe. Il provient exclusivement de notre propre pipeline d'entraînement (`train.py`) et
+est déposé sur le volume du VPS via `cd-model.yml` (accès SSH authentifié) : la source est
+de confiance, aucun canal ne permet à un attaquant de fournir un checkpoint arbitraire. Si le
+modèle venait un jour d'un tiers, il faudrait repasser à `weights_only=True` (chargement du
+seul `state_dict`) ou vérifier une somme de contrôle signée avant chargement.
 </content>
