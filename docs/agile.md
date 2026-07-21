@@ -56,8 +56,8 @@ observable intégralement dans l'historique Git :
    cohérente : `feature/<sujet>` pour une fonctionnalité, `fix/<sujet>` pour un
    correctif (ex. `feature/api-predict`, `fix/torch-cpu`).
 3. Le travail est intégré via une **Pull Request** vers `develop`, fusionnée après
-   revue. L'historique compte **35 commits de merge** au total
-   (`git log --merges --oneline | wc -l`) : **34 PR de fonctionnalité ou de correctif**
+   revue. L'historique compte **41 commits de merge** au total
+   (`git log --merges --oneline | wc -l`) : **40 PR de fonctionnalité ou de correctif**
    fusionnées sur `develop` + **1 promotion initiale `develop → main`** (PR #42, seul
    merge présent sur `main`). Le détail par semaine est dans
    [docs/pr_cadence.md](pr_cadence.md).
@@ -91,8 +91,9 @@ chiffré complet, avec graphiques Mermaid et vue cumulée, est dans
 | 2026-W27 | 29/06 – 05/07 | 20 | 40 |
 | 2026-W28 | 06/07 – 12/07 | 0 | 12 |
 | 2026-W29 | 13/07 – 19/07 | 12 | 38 |
+| 2026-W30 | 20/07 – 26/07 | 6 | 15 |
 
-Deux métriques distinctes y figurent : les **PR fusionnées** (35 au total, l'unité de
+Deux métriques distinctes y figurent : les **PR fusionnées** (41 au total, l'unité de
 livraison) et le **nombre total de commits** par semaine (rythme de travail brut). La
 semaine W28 illustre l'écart : 0 PR fusionnée mais 12 commits — travail de rédaction des
 specs poussé sur les branches `25-/26-/27-docs-*`, fusionnées seulement en W29.

@@ -40,7 +40,7 @@ adossé à GitHub :
 - **Support de pilotage** : GitHub Issues + un tableau GitHub Projects (colonnes de suivi
   des issues) ; les issues portent des numéros référencés dans les commits (ex. #4, #5, #6,
   #25, #26, #27 — voir `git log --all --grep="#"`).
-- **Cycle de travail** unitaire, répété **35 fois** sur le projet :
+- **Cycle de travail** unitaire, répété **41 fois** sur le projet :
   `issue → branche dédiée (feature/* ou fix/*) → Pull Request → merge sur develop`.
 - **Flux tiré, par petits lots** : un ticket = une branche = une PR, livré en continu
   plutôt qu'en sprints de durée fixe. Ce choix (Kanban plutôt que SCRUM strict) est cohérent
