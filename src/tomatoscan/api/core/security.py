@@ -7,13 +7,17 @@ import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from loguru import logger
 from passlib.context import CryptContext
 
-# Schéma OAuth2 — tokenUrl indique l'URL de connexion pour la doc Swagger
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+# Schéma Bearer — le bouton "Authorize" de Swagger propose un champ où coller le
+# token obtenu via POST /auth/token (le formulaire OAuth2 password envoyait du
+# form-urlencoded, incompatible avec le corps JSON attendu par cette route).
+# auto_error=False : l'absence de header est gérée dans _decoder_charge() pour
+# répondre 401 comme avant (HTTPBearer répondrait 403 par défaut).
+porteur_bearer = HTTPBearer(auto_error=False)
 
 # Contexte de hash des mots de passe — bcrypt, un seul schéma nécessaire pour ce projet
 _contexte_mot_de_passe = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -63,7 +67,9 @@ def creer_token_acces(donnees: dict) -> str:
     return jwt.encode(charge, cle_secrete, algorithm=algorithme)
 
 
-def _decoder_charge(token: str = Depends(oauth2_scheme)) -> dict:
+def _decoder_charge(
+    identifiants: HTTPAuthorizationCredentials | None = Depends(porteur_bearer),
+) -> dict:
     """
     Dépendance FastAPI interne : valide le token Bearer et retourne sa charge décodée.
 
@@ -80,6 +86,10 @@ def _decoder_charge(token: str = Depends(oauth2_scheme)) -> dict:
         headers={"WWW-Authenticate": "Bearer"},
     )
 
+    # Header Authorization absent ou sans schéma Bearer — 401 immédiat
+    if identifiants is None:
+        raise erreur_401
+
     cle_secrete = os.getenv("SECRET_KEY", "")
     algorithme = os.getenv("ALGORITHM", "HS256")
 
@@ -88,7 +98,9 @@ def _decoder_charge(token: str = Depends(oauth2_scheme)) -> dict:
         raise erreur_401
 
     try:
-        return jwt.decode(token, cle_secrete, algorithms=[algorithme])
+        return jwt.decode(
+            identifiants.credentials, cle_secrete, algorithms=[algorithme]
+        )
     except JWTError as erreur:
         logger.warning(f"Token JWT invalide : {erreur}")
         raise erreur_401
